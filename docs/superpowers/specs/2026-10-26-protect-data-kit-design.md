@@ -12,16 +12,16 @@ Life sciences participants at the Oct 26 session need practical help with one qu
 
 Decided build order is event-day first:
 
-1. **Event-day kit (this spec):** paste-checker, decision tree, synthetic datasets.
+1. **Event-day kit (this spec):** paste-checker, decision tree, synthetic datasets, leak log sheet.
 2. Claude Code adapter: `UserPromptSubmit` and `PreToolUse` hooks, deny rules for confidential paths.
-3. Audit: scan Claude Code transcripts and proxy logs after the fact and report. Detects exposure; cannot undo it.
+3. Audit: scan Claude Code transcripts and proxy logs after the fact and report. Detects exposure; cannot undo it. It also emits leak reports in the `leak-report` v1 shape defined by the leak log sheet (how it leaked, where it went, how it was found), so manual and automatic reports match.
 4. API adapter: local proxy that scans outgoing requests. Claude Code can also point at it via `ANTHROPIC_BASE_URL`.
 
 Later sub-projects reuse `rules.json` from this one. Each gets its own spec and plan.
 
 ## Scope
 
-In scope: three standalone, offline pieces delivered as local files. No backend, no network calls, no analytics, no hosting.
+In scope: four standalone, offline pieces delivered as local files. No backend, no network calls, no analytics, no hosting.
 
 Out of scope: enforcement tooling (roadmap items 2-4), compliance or legal claims, statements about Anthropic data handling or plan terms, detection in images/PDFs/attachments, a local LLM classifier.
 
@@ -77,11 +77,23 @@ At most four questions, one at a time:
 
 Safeguards: every file starts with a "SYNTHETIC, not real data" header; compound IDs use the `SYN-` prefix; everything is generated from random seeds, never adapted from a real or published sequence, structure or study.
 
+### 4. Leak log sheet (`index.html`, tab 3)
+
+Added after the first approval, at the user's request: if any data is leaked, record it and how it was leaked.
+
+**Principle:** the log never stores the leaked data itself, only descriptions. A log that held the sensitive content would be a second leak.
+
+**Fields** (one entry per incident): when (auto-filled, editable); what kind of data (IP, patient or participant data, credentials, internal, other); how it leaked (pasted into a chat or prompt, uploaded a file, shared a link, sent a screenshot, a tool read it from a prompt/file/folder, sent through an app or API, other); where it went (the decision tree's destinations); how it was found (paste-checker, self, colleague, later audit); still reachable (yes, no, don't know); actions taken (deleted the conversation or file, rotated the credential, told the security or compliance contact, other); notes (free text, 500 characters).
+
+**Safeguards:** the notes field says "Describe, do not paste", and notes are run through the same detectors before saving. A match blocks the save and shows what kind of content it looks like, without echoing the matched text. No names of individuals are requested (roles are fine). Entries live only in browser local storage and are sent nowhere.
+
+**Outputs:** JSON export in a documented `leak-report` v1 shape (`{ format, version, generated, entries }`), and a printable report table. Out of scope: automatic detection of leaks (that is the later audit sub-project), severity scoring, and any statement about legal notification duties. The page says it is a record, not legal or compliance advice.
+
 ## File layout
 
 ```
 protect-data-kit/
-  index.html            paste-checker + decision tree (tabs, single file, no dependencies)
+  index.html            paste-checker + decision tree + leak log (tabs, single file, no dependencies)
   rules.json            detector rules and defaults (format reused by later tools)
   synthetic/            four data files + README.md
   tests/
@@ -104,6 +116,8 @@ Participants open `index.html` locally (zip, shared drive, or USB). Nothing is h
 - Manual check: open `index.html` from disk with the network disabled and confirm every feature works and no requests are made.
 
 ## Risks and limits
+
+- The leak log depends on people choosing to record incidents; it is a record, not a detector. Notes are checked by the same pattern detectors, so unlisted sensitive content in prose can still be typed into it.
 
 - Pattern detection misses what it was not told about; the page says so.
 - SMILES and short sequences will produce false positives and false negatives; severity labels and the "Review" verdict are meant to keep a human in the loop.

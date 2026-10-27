@@ -23,6 +23,7 @@
 - The page lists known blind spots: unpublished results in prose, images/screenshots, attachments, anything not on the watchlist.
 - Decision tree: "Don't know" about an agreement is never treated as yes and routes to "Only in an approved environment". Every outcome carries a line that this is guidance, not legal or compliance advice. No named regulations or plan terms.
 - Synthetic data: every file starts with a "SYNTHETIC, not real data" header; compound IDs use the `SYN-` prefix; everything is generated from random seeds and never adapted from a real or published sequence, structure or study.
+- Leak log (added after the user approved the design): records descriptions only and never the leaked data; free-text notes are scanned with the same detectors and a match blocks the save; no names of individuals; entries stay in browser `localStorage` and are sent nowhere; export shape is `{ format:'leak-report', version:1, generated, entries }`; the page says it is a record, not legal or compliance advice.
 - Out of scope: enforcement (hooks, proxy, transcript audit), compliance or legal claims, statements about Anthropic data handling, image/PDF/attachment detection, a local LLM classifier.
 
 **Git note:** the workspace is not a git repo. Every "Commit" step applies only if `git init` has been run. Otherwise skip it. Commit messages end with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
@@ -40,6 +41,8 @@ protect-data-kit/
   src/
     detect.js                     engine: scan, redact, normalizeRules (browser + Node)
     tree.js                       decision tree: nextQuestion, outcome, text (browser + Node)
+    leaklog.js                    leak log: createEntry, nextId, reportRows, exportReport (browser + Node)
+    leaklog-ui.js                 leak log tab wiring (browser only)
     app.js                        UI wiring (browser only)
     template.html                 page shell with build markers
   tools/
@@ -50,6 +53,7 @@ protect-data-kit/
     detectors-regex.test.cjs      regex detector tests
     detectors-builtin.test.cjs    sequence + SMILES tests
     tree.test.cjs                 decision tree tests
+    leaklog.test.cjs              leak log tests
     run-checks.cjs                fixtures + static offline checks, exits non-zero on failure
     fixtures/
       public-text.txt             must produce zero matches
@@ -1430,7 +1434,546 @@ git commit -m "feat: paste-checker and decision tree UI, build script, offline s
 
 ---
 
-### Task 7: Docs, facilitator script, and manual verification
+### Task 7: Leak log sheet
+
+**Files:**
+- Create: `src/leaklog.js`, `src/leaklog-ui.js`
+- Modify: `src/template.html`, `src/app.js`, `build.cjs`, `tests/run-checks.cjs`
+- Test: `tests/leaklog.test.cjs`
+- Generate: `index.html` (rebuilt)
+
+**Interfaces:**
+- Consumes: `Detect.scan(text, rules) -> { matches:[{label,severity,start,end,text,...}], ... }`, `Detect.normalizeRules`, `Tree.QUESTIONS.where.options` (from `src/tree.js`); in the page, `rules` held by `src/app.js` (exposed to the new UI through `window.PDK.getRules()`).
+- Produces (global `LeakLog` in the page; `module.exports = LeakLog` in Node):
+  - `LeakLog.DATA_KINDS, HOW, WHERE, FOUND, REACHABLE, ACTIONS`: arrays of `[value, label]`; `WHERE` is `Tree.QUESTIONS.where.options`.
+  - `LeakLog.NOTES_MAX = 500`
+  - `LeakLog.COLUMNS`: array of `[key, heading]` used for the table and print report.
+  - `LeakLog.createEntry(fields, rules, existing) -> { ok:true, entry } | { ok:false, errors:string[], blocked:{label,severity,start,end}[] }`. `fields = { when:string(ISO or datetime-local), kind, how, where, found, reachable, actions:string[], notes:string }`. `entry = { id:'LK-001', when:ISO-UTC string, kind, how, where, found, reachable, actions:string[], notes }` (whitelisted keys only). If `notes` matches any detector the save is refused: `blocked` carries labels and positions, never the matched text.
+  - `LeakLog.nextId(entries) -> 'LK-NNN'` (max existing number + 1, zero-padded to 3).
+  - `LeakLog.reportRows(entries) -> object[]` with human-readable strings for every `COLUMNS` key (`when` rendered as `YYYY-MM-DD HH:MM UTC`; empty `actions` rendered as `None recorded`).
+  - `LeakLog.exportReport(entries, now:Date) -> { format:'leak-report', version:1, generated:ISO string, entries:[...] }` (the shape the later audit sub-project will also emit).
+- Script order in the page: DETECT, TREE, LEAKLOG, APP, LEAKUI. New build markers: `/*__LEAKLOG__*/`, `/*__LEAKUI__*/`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/leaklog.test.cjs`:
+```js
+const test = require('node:test');
+const assert = require('node:assert');
+const Detect = require('../src/detect.js');
+const LeakLog = require('../src/leaklog.js');
+
+const rules = Detect.normalizeRules(require('../rules.json')).rules;
+
+const good = {
+  when: '2026-10-26T14:30:00.000Z',
+  kind: 'ip', how: 'pasted', where: 'claude_ai', found: 'self', reachable: 'dont_know',
+  actions: ['deleted', 'told_contact'],
+  notes: 'Pasted a results summary into a chat by mistake.'
+};
+
+test('a valid entry is accepted and normalised', () => {
+  const r = LeakLog.createEntry(good, rules, []);
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(Object.keys(r.entry).sort(),
+    ['actions', 'found', 'how', 'id', 'kind', 'notes', 'reachable', 'when', 'where']);
+  assert.strictEqual(r.entry.id, 'LK-001');
+  assert.strictEqual(r.entry.when, '2026-10-26T14:30:00.000Z');
+});
+
+test('unknown extra fields are dropped, never stored', () => {
+  const r = LeakLog.createEntry(Object.assign({}, good, { secret: 'x', name: 'A Person' }), rules, []);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.entry.secret, undefined);
+  assert.strictEqual(r.entry.name, undefined);
+});
+
+test('required choices and the date are validated', () => {
+  ['kind', 'how', 'where', 'found', 'reachable'].forEach(function (name) {
+    const bad = Object.assign({}, good); bad[name] = '';
+    const r = LeakLog.createEntry(bad, rules, []);
+    assert.strictEqual(r.ok, false, name);
+  });
+  assert.strictEqual(LeakLog.createEntry(Object.assign({}, good, { when: 'not a date' }), rules, []).ok, false);
+  assert.strictEqual(LeakLog.createEntry(Object.assign({}, good, { actions: ['bogus'] }), rules, []).ok, false);
+});
+
+test('notes longer than the limit are rejected', () => {
+  const r = LeakLog.createEntry(Object.assign({}, good, { notes: 'a '.repeat(300) }), rules, []);
+  assert.strictEqual(r.ok, false);
+});
+
+test('notes that contain the data itself are refused, and the data is not echoed back', () => {
+  const seq = 'ATGGCGTACGTTAGCTAGCTAGGATCCA';
+  const r = LeakLog.createEntry(Object.assign({}, good, { notes: 'Pasted ' + seq + ' into chat' }), rules, []);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.blocked.length, 1);
+  assert.strictEqual(r.blocked[0].label, 'Sequence');
+  assert.strictEqual(JSON.stringify(r).indexOf(seq), -1);
+});
+
+test('emails in notes are refused', () => {
+  const r = LeakLog.createEntry(Object.assign({}, good, { notes: 'sent to jane.doe@example.test' }), rules, []);
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.blocked.length >= 1);
+});
+
+test('ids continue from the highest existing id', () => {
+  assert.strictEqual(LeakLog.nextId([]), 'LK-001');
+  assert.strictEqual(LeakLog.nextId([{ id: 'LK-001' }, { id: 'LK-007' }, { id: 'LK-003' }]), 'LK-008');
+  assert.strictEqual(LeakLog.nextId([{ id: 'junk' }]), 'LK-001');
+});
+
+test('reportRows renders labels, a stable UTC time and a none-recorded default', () => {
+  const e = LeakLog.createEntry(Object.assign({}, good, { actions: [] }), rules, []).entry;
+  const row = LeakLog.reportRows([e])[0];
+  assert.strictEqual(row.when, '2026-10-26 14:30 UTC');
+  assert.strictEqual(row.how, 'Pasted into a chat or prompt');
+  assert.strictEqual(row.actions, 'None recorded');
+  LeakLog.COLUMNS.forEach(function (c) { assert.strictEqual(typeof row[c[0]], 'string', c[0]); });
+});
+
+test('exportReport has the documented shape', () => {
+  const e = LeakLog.createEntry(good, rules, []).entry;
+  const rep = LeakLog.exportReport([e], new Date('2026-10-26T15:00:00.000Z'));
+  assert.strictEqual(rep.format, 'leak-report');
+  assert.strictEqual(rep.version, 1);
+  assert.strictEqual(rep.generated, '2026-10-26T15:00:00.000Z');
+  assert.deepStrictEqual(rep.entries, [e]);
+});
+
+test('WHERE options come from the decision tree so the two stay in step', () => {
+  const Tree = require('../src/tree.js');
+  assert.deepStrictEqual(LeakLog.WHERE, Tree.QUESTIONS.where.options);
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `node --test tests/leaklog.test.cjs`
+Expected: FAIL with "Cannot find module '../src/leaklog.js'"
+
+- [ ] **Step 3: Write the pure module**
+
+`src/leaklog.js`:
+```js
+const LeakLog = (function () {
+  const treeRef = typeof Tree !== 'undefined' ? Tree : require('./tree.js');
+  const detectRef = typeof Detect !== 'undefined' ? Detect : require('./detect.js');
+
+  const NOTES_MAX = 500;
+
+  const DATA_KINDS = [
+    ['ip', 'Unpublished research or IP'],
+    ['patient', 'Patient or participant data'],
+    ['credentials', 'Credentials'],
+    ['internal', 'Internal, not sensitive'],
+    ['other', 'Other']
+  ];
+  const HOW = [
+    ['pasted', 'Pasted into a chat or prompt'],
+    ['uploaded', 'Uploaded a file'],
+    ['link', 'Shared a link'],
+    ['screenshot', 'Sent a screenshot or image'],
+    ['tool_read', 'A tool read it from a prompt, file or folder'],
+    ['api_app', 'Sent through an app or API'],
+    ['other', 'Other']
+  ];
+  const WHERE = treeRef.QUESTIONS.where.options;
+  const FOUND = [
+    ['paste_checker', 'Paste-checker'],
+    ['self', 'I noticed'],
+    ['colleague', 'A colleague noticed'],
+    ['audit', 'A later audit']
+  ];
+  const REACHABLE = [['yes', 'Yes'], ['no', 'No'], ['dont_know', "Don't know"]];
+  const ACTIONS = [
+    ['deleted', 'Deleted the conversation or file'],
+    ['rotated', 'Rotated the credential'],
+    ['told_contact', 'Told the security or compliance contact'],
+    ['other', 'Other']
+  ];
+
+  const COLUMNS = [
+    ['id', 'ID'], ['when', 'When'], ['kind', 'Data'], ['how', 'How it leaked'],
+    ['where', 'Where it went'], ['found', 'How it was found'],
+    ['reachable', 'Still reachable'], ['actions', 'Actions taken'], ['notes', 'Notes']
+  ];
+
+  function values(list) { return list.map(function (o) { return o[0]; }); }
+  function labelOf(list, v) {
+    const hit = list.filter(function (o) { return o[0] === v; })[0];
+    return hit ? hit[1] : String(v);
+  }
+
+  function nextId(entries) {
+    let max = 0;
+    (entries || []).forEach(function (e) {
+      const m = /^LK-(\d+)$/.exec(e && e.id);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    });
+    return 'LK-' + String(max + 1).padStart(3, '0');
+  }
+
+  function createEntry(fields, rules, existing) {
+    const f = fields || {};
+    const errors = [];
+
+    [['kind', DATA_KINDS], ['how', HOW], ['where', WHERE], ['found', FOUND], ['reachable', REACHABLE]]
+      .forEach(function (pair) {
+        if (values(pair[1]).indexOf(f[pair[0]]) === -1) errors.push('Choose a value for "' + pair[0] + '".');
+      });
+
+    const when = typeof f.when === 'string' ? Date.parse(f.when) : NaN;
+    if (isNaN(when)) errors.push('Enter a valid date and time.');
+
+    const actions = Array.isArray(f.actions) ? f.actions : [];
+    if (actions.some(function (a) { return values(ACTIONS).indexOf(a) === -1; })) errors.push('Unknown action.');
+
+    const notes = typeof f.notes === 'string' ? f.notes : '';
+    if (notes.length > NOTES_MAX) errors.push('Notes are limited to ' + NOTES_MAX + ' characters.');
+
+    let blocked = [];
+    if (notes) {
+      blocked = detectRef.scan(notes, rules).matches.map(function (m) {
+        return { label: m.label, severity: m.severity, start: m.start, end: m.end };
+      });
+      if (blocked.length) errors.push('The notes look like they contain the data itself. Describe it instead of pasting it, then save again.');
+    }
+
+    if (errors.length) return { ok: false, errors: errors, blocked: blocked };
+
+    return {
+      ok: true,
+      entry: {
+        id: nextId(existing),
+        when: new Date(when).toISOString(),
+        kind: f.kind,
+        how: f.how,
+        where: f.where,
+        found: f.found,
+        reachable: f.reachable,
+        actions: values(ACTIONS).filter(function (a) { return actions.indexOf(a) !== -1; }),
+        notes: notes
+      }
+    };
+  }
+
+  function reportRows(entries) {
+    return (entries || []).map(function (e) {
+      return {
+        id: e.id,
+        when: String(e.when).replace('T', ' ').slice(0, 16) + ' UTC',
+        kind: labelOf(DATA_KINDS, e.kind),
+        how: labelOf(HOW, e.how),
+        where: labelOf(WHERE, e.where),
+        found: labelOf(FOUND, e.found),
+        reachable: labelOf(REACHABLE, e.reachable),
+        actions: (e.actions && e.actions.length)
+          ? e.actions.map(function (a) { return labelOf(ACTIONS, a); }).join('; ')
+          : 'None recorded',
+        notes: e.notes || ''
+      };
+    });
+  }
+
+  function exportReport(entries, now) {
+    return { format: 'leak-report', version: 1, generated: now.toISOString(), entries: entries.slice() };
+  }
+
+  return {
+    NOTES_MAX: NOTES_MAX, DATA_KINDS: DATA_KINDS, HOW: HOW, WHERE: WHERE, FOUND: FOUND,
+    REACHABLE: REACHABLE, ACTIONS: ACTIONS, COLUMNS: COLUMNS,
+    createEntry: createEntry, nextId: nextId, reportRows: reportRows, exportReport: exportReport
+  };
+})();
+
+if (typeof module !== 'undefined') module.exports = LeakLog;
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `node --test tests/leaklog.test.cjs`
+Expected: all PASS
+
+- [ ] **Step 5: Add the page markup**
+
+In `src/template.html`:
+
+(a) Inside the `<style>` block, before `</style>`, add:
+```css
+  table.leak-table { border-collapse: collapse; width: 100%; background: #fff; font-size: .9rem; }
+  table.leak-table th, table.leak-table td { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+  fieldset { border: 2px solid var(--line); border-radius: 6px; }
+  select, input[type=datetime-local] { font: inherit; padding: 6px; max-width: 100%; }
+  @media print { header, [role=tablist], .no-print { display: none; } body { background: #fff; } }
+```
+
+(b) In the tablist `<div role="tablist" ...>`, after the `tab-tree` button, add:
+```html
+  <button role="tab" id="tab-leak" aria-controls="panel-leak" aria-selected="false">Leak log</button>
+```
+
+(c) After the `panel-tree` `</section>` (before `</main>`), add:
+```html
+<section id="panel-leak" role="tabpanel" aria-labelledby="tab-leak" hidden>
+  <h2>Leak log</h2>
+  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice.</p>
+  <form id="leak-form" novalidate>
+    <p><label for="leak-when">When</label><br><input id="leak-when" type="datetime-local"></p>
+    <p><label for="leak-kind">What kind of data</label><br><select id="leak-kind"></select></p>
+    <p><label for="leak-how">How it leaked</label><br><select id="leak-how"></select></p>
+    <p><label for="leak-where">Where it went</label><br><select id="leak-where"></select></p>
+    <p><label for="leak-found">How it was found</label><br><select id="leak-found"></select></p>
+    <p><label for="leak-reachable">Is it still reachable?</label><br><select id="leak-reachable"></select></p>
+    <fieldset><legend>Actions taken</legend><div id="leak-actions"></div></fieldset>
+    <p><label for="leak-notes">Notes (up to 500 characters, describe do not paste)</label><br><textarea id="leak-notes" maxlength="500" spellcheck="false"></textarea></p>
+    <p><button id="leak-save" type="submit">Save entry</button></p>
+  </form>
+  <p id="leak-errors" class="small" role="alert"></p>
+  <p id="leak-status" class="small" role="status"></p>
+  <h3>Entries</h3>
+  <div id="leak-table-wrap"></div>
+  <p class="no-print">
+    <button id="leak-export" type="button">Export JSON</button>
+    <button id="leak-print" type="button">Print report</button>
+    <button id="leak-clear" type="button">Clear all entries</button>
+  </p>
+</section>
+```
+
+(d) Replace the four script lines at the end of `<body>` with these, in this order:
+```html
+<script type="application/json" id="embedded-rules">/*__RULES__*/</script>
+<script>/*__DETECT__*/</script>
+<script>/*__TREE__*/</script>
+<script>/*__LEAKLOG__*/</script>
+<script>/*__APP__*/</script>
+<script>/*__LEAKUI__*/</script>
+```
+
+- [ ] **Step 6: Expose rules and extend tabs in `src/app.js`**
+
+(a) Immediately after the line `var rules = loadRules();` add:
+```js
+  window.PDK = { getRules: function () { return rules; } };
+```
+(b) In `showTab`, change the array `['check', 'tree']` to `['check', 'tree', 'leak']`.
+(c) Directly after the line that binds `$('tab-tree')` click, add:
+```js
+  $('tab-leak').addEventListener('click', function () { showTab('leak'); });
+```
+
+- [ ] **Step 7: Write the UI script**
+
+`src/leaklog-ui.js`:
+```js
+(function () {
+  'use strict';
+
+  var STORE_KEY = 'pdk.leaklog.v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var entries = load();
+  var confirmingClear = false;
+
+  function load() {
+    try {
+      var v = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(entries)); $('leak-status').textContent = ''; }
+    catch (e) { $('leak-status').textContent = 'Could not save in this browser; entries last for this tab only.'; }
+  }
+
+  function fillSelect(id, options) {
+    var sel = $(id);
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Choose...';
+    sel.appendChild(blank);
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o[0];
+      opt.textContent = o[1];
+      sel.appendChild(opt);
+    });
+  }
+
+  function localNowForInput() {
+    var d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+
+  function renderActions() {
+    var box = $('leak-actions');
+    LeakLog.ACTIONS.forEach(function (a) {
+      var label = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = a[0];
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + a[1]));
+      var wrap = document.createElement('div');
+      wrap.appendChild(label);
+      box.appendChild(wrap);
+    });
+  }
+
+  function renderTable() {
+    var wrap = $('leak-table-wrap');
+    wrap.textContent = '';
+    if (!entries.length) {
+      var p = document.createElement('p');
+      p.className = 'small';
+      p.textContent = 'No entries yet.';
+      wrap.appendChild(p);
+      return;
+    }
+    var table = document.createElement('table');
+    table.className = 'leak-table';
+    var head = document.createElement('tr');
+    LeakLog.COLUMNS.forEach(function (c) {
+      var th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = c[1];
+      head.appendChild(th);
+    });
+    table.appendChild(head);
+    LeakLog.reportRows(entries).forEach(function (row) {
+      var tr = document.createElement('tr');
+      LeakLog.COLUMNS.forEach(function (c) {
+        var td = document.createElement('td');
+        td.textContent = row[c[0]];
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+  }
+
+  function readForm() {
+    var actions = [];
+    $('leak-actions').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+      if (cb.checked) actions.push(cb.value);
+    });
+    var whenValue = $('leak-when').value;
+    return {
+      when: whenValue ? new Date(whenValue).toISOString() : '',
+      kind: $('leak-kind').value,
+      how: $('leak-how').value,
+      where: $('leak-where').value,
+      found: $('leak-found').value,
+      reachable: $('leak-reachable').value,
+      actions: actions,
+      notes: $('leak-notes').value
+    };
+  }
+
+  function resetForm() {
+    $('leak-form').reset();
+    $('leak-when').value = localNowForInput();
+  }
+
+  $('leak-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var result = LeakLog.createEntry(readForm(), window.PDK.getRules(), entries);
+    var errBox = $('leak-errors');
+    if (!result.ok) {
+      var msg = result.errors.join(' ');
+      if (result.blocked.length) {
+        msg += ' Looks like: ' + result.blocked.map(function (b) { return b.label + ' (' + b.severity + ')'; }).join(', ') + '.';
+      }
+      errBox.textContent = msg;
+      return;
+    }
+    errBox.textContent = '';
+    entries.push(result.entry);
+    save();
+    renderTable();
+    resetForm();
+    $('leak-status').textContent = 'Saved ' + result.entry.id + '.';
+  });
+
+  $('leak-export').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(LeakLog.exportReport(entries, new Date()), null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'leak-report.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $('leak-print').addEventListener('click', function () { window.print(); });
+
+  $('leak-clear').addEventListener('click', function () {
+    var btn = $('leak-clear');
+    if (!confirmingClear) {
+      confirmingClear = true;
+      btn.textContent = 'Click again to confirm clearing all entries';
+      return;
+    }
+    confirmingClear = false;
+    btn.textContent = 'Clear all entries';
+    entries = [];
+    save();
+    renderTable();
+    $('leak-status').textContent = 'All entries cleared.';
+  });
+
+  fillSelect('leak-kind', LeakLog.DATA_KINDS);
+  fillSelect('leak-how', LeakLog.HOW);
+  fillSelect('leak-where', LeakLog.WHERE);
+  fillSelect('leak-found', LeakLog.FOUND);
+  fillSelect('leak-reachable', LeakLog.REACHABLE);
+  renderActions();
+  $('leak-when').value = localNowForInput();
+  renderTable();
+})();
+```
+
+- [ ] **Step 8: Update the build script**
+
+In `build.cjs`, in the `parts` object, add two entries so it reads:
+```js
+const parts = {
+  RULES: JSON.stringify(JSON.parse(read('rules.json'))).replace(/</g, '\\u003c'),
+  DETECT: read('src/detect.js'),
+  TREE: read('src/tree.js'),
+  LEAKLOG: read('src/leaklog.js'),
+  APP: read('src/app.js'),
+  LEAKUI: read('src/leaklog-ui.js')
+};
+```
+
+- [ ] **Step 9: Add static checks**
+
+In `tests/run-checks.cjs`, inside the `if (fs.existsSync(builtPath)) {` block, after the `advisory` check, add:
+```js
+  check('index.html has the leak log tab', /Leak log/.test(html) && /id="panel-leak"/.test(html));
+  check('leak log tells users to describe, not paste', /Describe, do not paste/.test(html));
+  check('leak log says it is not legal or compliance advice', /record, not legal or compliance advice/.test(html));
+  check('leak log script is inlined', /const LeakLog =/.test(html) && /pdk\.leaklog\.v1/.test(html));
+```
+
+- [ ] **Step 10: Build and run every check**
+
+Run: `npm run build && npm run check && npm test`
+Expected: build succeeds, all checks PASS (including the four new ones and every existing static offline check), all unit tests pass. You cannot test the page in a browser; say so in your report.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add protect-data-kit/src protect-data-kit/build.cjs protect-data-kit/index.html protect-data-kit/tests
+git commit -m "feat: leak log sheet with safe-to-save check and exportable report" -m "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 8: Docs, facilitator script, and manual verification
 
 **Files:**
 - Create: `README.md`, `FACILITATOR.md`
@@ -1485,6 +2028,8 @@ Open `index.html` from disk before the session. Use only the synthetic files.
 4. **The decision tree (1 min).** Walk "Unpublished research or IP" -> "No" -> "Claude.ai chat" ->
    "Don't know". Land on "Only in an approved environment". Note that "Don't know" never counts as yes.
 
+5. **The leak log (1 min).** Open the Leak log tab and record an example using only descriptions. Try pasting a sequence into Notes and show that the save is refused. Say: if something does leak, this is where we record how it happened.
+
 Reminders for the room: the checker is advisory and cannot stop you pasting elsewhere; it does not
 read images, PDFs or attachments; the tree is guidance, not legal or compliance advice.
 ```
@@ -1505,6 +2050,7 @@ Open `index.html` with `file://` and turn off the network (Wi-Fi off or DevTools
 6. "Copy redacted text" puts the redacted text on the clipboard.
 7. The decision tree reaches each of the four outcomes, each shows the guidance-not-legal-advice line, and "Start over" works.
 8. Keyboard only: Tab reaches every control, and the focus ring is visible.
+9. Leak log tab: saving an entry with only descriptions works and appears in the table; an entry whose notes contain a pasted sequence or an email is refused without echoing it; entries survive a reload; "Export JSON" downloads a `leak-report` file; "Print report" shows only the table; "Clear all entries" needs a second click.
 
 - [ ] **Step 5: Commit (only if `git init` has been run)**
 
@@ -1524,9 +2070,10 @@ git commit -m "docs: README and facilitator script" -m "Co-Authored-By: Claude S
 - Synthetic datasets (four files plus README, SYNTHETIC header, `SYN-` prefix, seeded): Task 5.
 - File layout, embedded `rules.json` at build time, imported rules override the embedded copy: Tasks 1, 6.
 - Testing (positive and negative cases per detector, synthetic files as positives, public text as zero-flag, headless `run-checks`, offline manual check): Tasks 2-3, 5-7.
-- Delivery (facilitator walk-through of one flagged example and one false negative): Task 7.
+- Delivery (facilitator walk-through of one flagged example and one false negative): Task 8.
+- Leak log sheet (added after the spec was approved, at the user's request, design approved in session): Task 7.
 
-**Additions beyond the spec (flag for the user):** `build.cjs`, `package.json`, `tools/generate-synthetic.cjs`, `README.md`, `FACILITATOR.md`, and a `false-negative-prose.txt` fixture. They are needed to meet the spec's "built / seeded / walk-through" requirements.
+**Additions beyond the spec (flag for the user):** the leak log sheet (Task 7); `build.cjs`, `package.json`, `tools/generate-synthetic.cjs`, `README.md`, `FACILITATOR.md`, and a `false-negative-prose.txt` fixture. They are needed to meet the spec's "built / seeded / walk-through" requirements.
 
 **Decisions the spec left open:** verdict mapping (any High → Stop; Medium or Watchlist only → Review); a watchlist match alone gives Review, not Stop; the tree outcome table in `src/tree.js`.
 
