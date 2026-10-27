@@ -41,10 +41,14 @@ const LeakLog = (function () {
     ['reachable', 'Still reachable'], ['actions', 'Actions taken'], ['notes', 'Notes']
   ];
 
+  const SAFETY_INCOMPLETE = 'The safety check on the notes could not run completely, so the entry was not saved. Fix the rules in the paste-checker tab, then save again.';
+
   function values(list) { return list.map(function (o) { return o[0]; }); }
+  function text(v) { return v === null || v === undefined ? '' : String(v); }
+  function isPlainObject(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
   function labelOf(list, v) {
     const hit = list.filter(function (o) { return o[0] === v; })[0];
-    return hit ? hit[1] : String(v);
+    return hit ? hit[1] : text(v);
   }
 
   function nextId(entries) {
@@ -76,7 +80,11 @@ const LeakLog = (function () {
 
     let blocked = [];
     if (notes) {
-      blocked = detectRef.scan(notes, rules).matches.map(function (m) {
+      const scanned = detectRef.scan(notes, rules);
+      // Fail closed: a rule that could not run means the notes were not fully checked.
+      // Scan error strings are deliberately not read or returned (they can echo rule text).
+      if (scanned.errors.length) errors.push(SAFETY_INCOMPLETE);
+      blocked = scanned.matches.map(function (m) {
         return { label: m.label, severity: m.severity, start: m.start, end: m.end };
       });
       if (blocked.length) errors.push('The notes look like they contain the data itself. Describe it instead of pasting it, then save again.');
@@ -100,20 +108,51 @@ const LeakLog = (function () {
     };
   }
 
-  function reportRows(entries) {
-    return (entries || []).map(function (e) {
-      return {
+  // Keeps only well-formed entries (see sanitizeEntries); anything else is counted as dropped.
+  function sanitizeEntries(raw) {
+    if (!Array.isArray(raw)) return { entries: [], dropped: 0 };
+    const entries = [];
+    let dropped = 0;
+    raw.forEach(function (e) {
+      const ok = isPlainObject(e) &&
+        typeof e.id === 'string' && /^LK-\d+$/.test(e.id) &&
+        values(DATA_KINDS).indexOf(e.kind) !== -1 &&
+        values(HOW).indexOf(e.how) !== -1 &&
+        values(WHERE).indexOf(e.where) !== -1 &&
+        values(FOUND).indexOf(e.found) !== -1 &&
+        values(REACHABLE).indexOf(e.reachable) !== -1 &&
+        typeof e.when === 'string' && !isNaN(Date.parse(e.when));
+      if (!ok) { dropped++; return; }
+      const wanted = typeof e.actions === 'string' ? [e.actions] : (Array.isArray(e.actions) ? e.actions : []);
+      entries.push({
         id: e.id,
-        when: String(e.when).replace('T', ' ').slice(0, 16) + ' UTC',
+        when: new Date(Date.parse(e.when)).toISOString(),
+        kind: e.kind,
+        how: e.how,
+        where: e.where,
+        found: e.found,
+        reachable: e.reachable,
+        actions: values(ACTIONS).filter(function (a) { return wanted.indexOf(a) !== -1; }),
+        notes: typeof e.notes === 'string' ? e.notes.slice(0, NOTES_MAX) : ''
+      });
+    });
+    return { entries: entries, dropped: dropped };
+  }
+
+  function reportRows(entries) {
+    return (Array.isArray(entries) ? entries : []).filter(isPlainObject).map(function (e) {
+      return {
+        id: text(e.id),
+        when: text(e.when).replace('T', ' ').slice(0, 16) + ' UTC',
         kind: labelOf(DATA_KINDS, e.kind),
         how: labelOf(HOW, e.how),
         where: labelOf(WHERE, e.where),
         found: labelOf(FOUND, e.found),
         reachable: labelOf(REACHABLE, e.reachable),
-        actions: (e.actions && e.actions.length)
+        actions: (Array.isArray(e.actions) && e.actions.length)
           ? e.actions.map(function (a) { return labelOf(ACTIONS, a); }).join('; ')
           : 'None recorded',
-        notes: e.notes || ''
+        notes: text(e.notes)
       };
     });
   }
@@ -125,7 +164,8 @@ const LeakLog = (function () {
   return {
     NOTES_MAX: NOTES_MAX, DATA_KINDS: DATA_KINDS, HOW: HOW, WHERE: WHERE, FOUND: FOUND,
     REACHABLE: REACHABLE, ACTIONS: ACTIONS, COLUMNS: COLUMNS,
-    createEntry: createEntry, nextId: nextId, reportRows: reportRows, exportReport: exportReport
+    createEntry: createEntry, nextId: nextId, sanitizeEntries: sanitizeEntries,
+    reportRows: reportRows, exportReport: exportReport
   };
 })();
 
