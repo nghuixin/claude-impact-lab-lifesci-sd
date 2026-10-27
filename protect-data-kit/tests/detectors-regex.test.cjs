@@ -75,3 +75,37 @@ test('redaction uses the typed placeholder', () => {
   const r = Detect.scan(text, rules);
   assert.strictEqual(Detect.redact(text, r.matches), 'Mail [PHI] today');
 });
+
+function timedScan(text) {
+  const start = process.hrtime.bigint();
+  const result = Detect.scan(text, rules);
+  return { ms: Number(process.hrtime.bigint() - start) / 1e6, result: result };
+}
+
+test('long run of email characters scans fast and matches nothing', () => {
+  const { ms, result } = timedScan('a'.repeat(60000));
+  assert.ok(ms < 100, 'scan took ' + ms.toFixed(1) + ' ms');
+  assert.deepStrictEqual(result.matches, []);
+});
+
+test('long run of digits scans fast and matches nothing', () => {
+  const { ms, result } = timedScan('1'.repeat(30000));
+  assert.ok(ms < 100, 'scan took ' + ms.toFixed(1) + ' ms');
+  assert.deepStrictEqual(result.matches, []);
+});
+
+test('long run of "a." scans fast and matches nothing', () => {
+  const { ms, result } = timedScan('a.'.repeat(30000));
+  assert.ok(ms < 100, 'scan took ' + ms.toFixed(1) + ' ms');
+  assert.deepStrictEqual(result.matches, []);
+});
+
+test('phi-email still matches an address preceded by a space', () => {
+  assert.strictEqual(first('write to a@b.co now', 'phi-email').text, 'a@b.co');
+  assert.strictEqual(first('Contact jane.doe@example.test now', 'phi-email').text, 'jane.doe@example.test');
+});
+
+test('assay-row still matches a row that follows other text', () => {
+  assert.ok(ids('row 1: SYN-0001,TGT-A,12.4,8.1,0.97').includes('assay-row'));
+  assert.ok(ids('SYN-0001,TGT-A,12.4,8.1,0.97').includes('assay-row'));
+});
