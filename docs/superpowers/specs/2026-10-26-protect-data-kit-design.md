@@ -1,7 +1,7 @@
 # Protect-Data Kit: Event-Day Design
 
 Date: 2026-10-26
-Status: Draft for user review
+Status: Approved by the user; implemented
 Sub-project: 1 of a larger effort (see "Roadmap")
 
 ## Problem
@@ -126,4 +126,4 @@ Participants open `index.html` locally (zip, shared drive, or USB). Nothing is h
 ## Decisions on record
 
 - Detection is watchlist plus patterns, all local. Using Claude to classify before sending is rejected for the pre-send path because the check itself would send the data out.
-- Workspace is not a git repo, so this spec is saved but not committed.
+- The workspace is a local git repo (branch `build/protect-data-kit`); nothing is pushed.

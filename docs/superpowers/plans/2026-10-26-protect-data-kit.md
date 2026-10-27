@@ -26,7 +26,7 @@
 - Leak log (added after the user approved the design): records descriptions only and never the leaked data; free-text notes are scanned with the same detectors and a match blocks the save; no names of individuals; entries stay in browser `localStorage` and are sent nowhere; export shape is `{ format:'leak-report', version:1, generated, entries }`; the page says it is a record, not legal or compliance advice.
 - Out of scope: enforcement (hooks, proxy, transcript audit), compliance or legal claims, statements about Anthropic data handling, image/PDF/attachment detection, a local LLM classifier.
 
-**Git note:** the workspace is not a git repo. Every "Commit" step applies only if `git init` has been run. Otherwise skip it. Commit messages end with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+**Git note:** the workspace is now a local git repo (nothing is pushed), so the "Commit" steps apply. Commit messages end with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 
 ## File Structure
 

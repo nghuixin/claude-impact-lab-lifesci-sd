@@ -193,3 +193,31 @@ test('storableRules output round-trips through normalizeRules to the original ru
   assert.strictEqual(back.ok, true);
   assert.deepStrictEqual(back.rules, rules);
 });
+
+// Simulates Safari before 16.4, where a lookbehind in new RegExp(...) throws at run time.
+function withoutLookbehind(fn) {
+  const Original = global.RegExp;
+  global.RegExp = new Proxy(Original, {
+    construct: function (target, args, newTarget) {
+      if (typeof args[0] === 'string' && args[0].indexOf('(?<') !== -1) throw new SyntaxError('Invalid regular expression: lookbehind unsupported');
+      return Reflect.construct(target, args, newTarget === global.RegExp ? target : newTarget);
+    }
+  });
+  try { return fn(); } finally { global.RegExp = Original; }
+}
+
+test('simulated old browser really throws on lookbehind', () => {
+  withoutLookbehind(() => assert.throws(() => new RegExp('(?<!a)b')));
+});
+
+test('watchlist compile failure does not throw and reports a fixed error without the term', () => {
+  const rules = Object.assign({}, none, { watchlist: ['SecretTerm'] });
+  const r = withoutLookbehind(() => Detect.scan('Alpha SecretTerm beta', rules));
+  assert.ok(r.errors.length >= 1);
+  r.errors.forEach((e) => assert.ok(e.indexOf('SecretTerm') === -1, e));
+});
+
+test('null or non-object watchlist entries do not throw', () => {
+  const rules = Object.assign({}, none, { watchlist: [null, 5, undefined, 'x'] });
+  assert.doesNotThrow(() => Detect.scan('x y', rules));
+});

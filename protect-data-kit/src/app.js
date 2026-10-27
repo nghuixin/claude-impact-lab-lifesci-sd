@@ -91,6 +91,18 @@
   }
 
   function run() {
+    try { runCheck(); } catch (e) {
+      $('highlight').textContent = '';
+      $('findings').textContent = '';
+      $('redacted').value = '';
+      $('counts').textContent = '';
+      $('scan-errors').textContent = '';
+      $('verdict').className = '';
+      $('verdict').textContent = 'Could not check this text in this browser. Do not rely on this page for it.';
+    }
+  }
+
+  function runCheck() {
     var text = $('input').value;
     if (!text) {
       $('verdict').className = '';
@@ -143,10 +155,13 @@
   $('export').addEventListener('click', function () {
     var blob = new Blob([JSON.stringify(rules, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    var url = URL.createObjectURL(blob);
+    a.href = url;
     a.download = 'rules.json';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   });
 
   $('import').addEventListener('change', function (ev) {
