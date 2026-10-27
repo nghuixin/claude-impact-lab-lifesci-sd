@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256" role="img" aria-labelledby="t d">
+  <title id="t">Protect-Data Kit logo</title>
+  <desc id="d">A blue shield containing a molecule ring with a check mark, and a redaction bar beneath it.</desc>
+  <!-- shield -->
+  <path d="M128 14 L218 46 V116 C218 172 181 214 128 242 C75 214 38 172 38 116 V46 Z" fill="#1a4fa0"/>
+  <!-- inner edge highlight -->
+  <path d="M128 26 L206 54 V116 C206 165 174 203 128 229 C82 203 50 165 50 116 V54 Z" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="3" stroke-linejoin="round"/>
+  <!-- molecule ring -->
+  <path d="M128 70 L168 93 V139 L128 162 L88 139 V93 Z" fill="none" stroke="#ffffff" stroke-width="10" stroke-linejoin="round"/>
+  <!-- check mark -->
+  <path d="M106 118 L123 136 L153 100" fill="none" stroke="#8df0b0" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- redaction bar -->
+  <rect x="94" y="184" width="68" height="11" rx="5.5" fill="#ffffff"/>
+</svg>
