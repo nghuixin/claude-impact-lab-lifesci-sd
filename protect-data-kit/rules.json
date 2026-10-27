@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "settings": { "minSeqLen": 20 },
+  "detectors": [],
+  "idFormats": [],
+  "watchlist": []
+}
