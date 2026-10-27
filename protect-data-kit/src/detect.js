@@ -31,7 +31,27 @@ const Detect = (function () {
   }
 
   // Builtin detectors take (text, settings) and return [{start, end, text}].
-  const BUILTINS = {};
+  const BUILTINS = {
+    sequence: function (text, settings) {
+      const n = settings.minSeqLen || 20;
+      const nucleotide = new RegExp('(?<![A-Za-z])[ACGTUNacgtun]{' + n + ',}(?![A-Za-z])', 'g');
+      const protein = new RegExp('(?<![A-Za-z])[ACDEFGHIKLMNPQRSTVWY]{' + n + ',}(?![A-Za-z])', 'g');
+      // Ignore low-complexity runs (fewer than 4 distinct letters, e.g. 'aaaa...' or 'AKIAAAAA...'):
+      // they are not sequence data, and they would otherwise shadow the secret detector.
+      return collect(nucleotide, text).concat(collect(protein, text)).filter(function (m) {
+        return new Set(m.text.toUpperCase()).size >= 4;
+      });
+    },
+    smiles: function (text) {
+      const token = /[^\s,;"'`]+/g;
+      const wholeToken = /^(?:Cl|Br|[BCNOSPFIHcnosp]|\[[^\]\s]+\]|[0-9]|%\d\d|[=#$:\/\\@+\-.()])+$/;
+      return collect(token, text).filter(function (t) {
+        if (t.text.length < 12 || !wholeToken.test(t.text)) return false;
+        if (!/[0-9=#(\[]/.test(t.text)) return false;
+        return (t.text.match(/[Cc]/g) || []).length >= 4;
+      });
+    }
+  };
 
   function scan(text, rules) {
     const errors = [];

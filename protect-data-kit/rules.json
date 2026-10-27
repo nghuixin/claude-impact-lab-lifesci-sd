@@ -2,6 +2,8 @@
   "version": 1,
   "settings": { "minSeqLen": 20 },
   "detectors": [
+    {"id":"sequence","type":"builtin","fn":"sequence","label":"Sequence","severity":"High","placeholder":"SEQUENCE","reason":"Long run of nucleotide or amino-acid letters; looks like a biological sequence."},
+    {"id":"smiles","type":"builtin","fn":"smiles","label":"Chemical structure (SMILES)","severity":"High","placeholder":"STRUCTURE","reason":"Looks like a SMILES structure string. This is a heuristic and can be wrong."},
     {"id":"inchi","type":"regex","pattern":"InChI=1S?\\/[^\\s]+","flags":"","label":"InChI string","severity":"High","placeholder":"STRUCTURE","reason":"InChI string; encodes a chemical structure."},
     {"id":"assay-values","type":"regex","pattern":"\\b(?:IC50|EC50|GI50|CC50|Ki|Kd)\\s*(?:=|:|≈|~|<|>|of|was|is)?\\s*\\d+(?:\\.\\d+)?\\s*(?:pM|nM|µM|uM|mM)\\b|\\b\\d+(?:\\.\\d+)?\\s*%\\s*inhibition\\b|\\bp\\s*[<=>]\\s*0?\\.\\d+","flags":"i","label":"Assay or result value","severity":"Medium","placeholder":"ASSAY","reason":"Looks like a potency, inhibition or significance result."},
     {"id":"assay-header","type":"regex","pattern":"\\b(?:IC50|EC50|GI50|CC50|Ki|Kd)[ _]?(?:\\((?:pM|nM|uM|µM|mM)\\)|(?:pM|nM|uM|µM|mM)\\b)","flags":"i","label":"Assay column header","severity":"Medium","placeholder":"ASSAY","reason":"Column name for a potency measurement with units."},
