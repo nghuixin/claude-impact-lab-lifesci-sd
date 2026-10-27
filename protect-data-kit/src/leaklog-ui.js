@@ -3,19 +3,21 @@
 
   var STORE_KEY = 'pdk.leaklog.v1';
   var $ = function (id) { return document.getElementById(id); };
-  var entries = load();
+  var loaded = load();
+  var entries = loaded.entries;
+  var skipped = loaded.dropped;
   var confirmingClear = false;
 
   function load() {
     try {
-      var v = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
-      return Array.isArray(v) ? v : [];
-    } catch (e) { return []; }
+      return LeakLog.sanitizeEntries(JSON.parse(localStorage.getItem(STORE_KEY) || '[]'));
+    } catch (e) { return { entries: [], dropped: 0 }; }
   }
 
+  // Returns false when the browser refuses the write; callers report that to the user.
   function save() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(entries)); $('leak-status').textContent = ''; }
-    catch (e) { $('leak-status').textContent = 'Could not save in this browser; entries last for this tab only.'; }
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(entries)); return true; }
+    catch (e) { return false; }
   }
 
   function fillSelect(id, options) {
@@ -122,10 +124,12 @@
     }
     errBox.textContent = '';
     entries.push(result.entry);
-    save();
+    var stored = save();
     renderTable();
     resetForm();
-    $('leak-status').textContent = 'Saved ' + result.entry.id + '.';
+    $('leak-status').textContent = stored
+      ? 'Saved ' + result.entry.id + '.'
+      : 'Could not save in this browser. This entry exists only until you close or reload this tab, so export it now.';
   });
 
   $('leak-export').addEventListener('click', function () {
@@ -149,9 +153,11 @@
     confirmingClear = false;
     btn.textContent = 'Clear all entries';
     entries = [];
-    save();
+    var cleared = save();
     renderTable();
-    $('leak-status').textContent = 'All entries cleared.';
+    $('leak-status').textContent = cleared
+      ? 'All entries cleared.'
+      : 'Could not save the change in this browser; the entries come back on reload.';
   });
 
   fillSelect('leak-kind', LeakLog.DATA_KINDS);
@@ -162,4 +168,5 @@
   renderActions();
   $('leak-when').value = localNowForInput();
   renderTable();
+  if (skipped > 0) $('leak-status').textContent = 'Skipped ' + skipped + ' unreadable stored entries.';
 })();

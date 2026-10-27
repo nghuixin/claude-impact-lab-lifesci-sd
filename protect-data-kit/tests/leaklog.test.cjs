@@ -86,3 +86,72 @@ test('WHERE options come from the decision tree so the two stay in step', () => 
   const Tree = require('../src/tree.js');
   assert.deepStrictEqual(LeakLog.WHERE, Tree.QUESTIONS.where.options);
 });
+
+test('fails closed: an incomplete safety check refuses the save without echoing the rule text', () => {
+  const badRules = Object.assign({}, rules, { idFormats: ['(zzz'] });
+  const r = LeakLog.createEntry(good, badRules, []);
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.errors.join(' ').indexOf('safety check') !== -1);
+  assert.strictEqual(JSON.stringify(r).indexOf('(zzz'), -1);
+});
+
+test('an incomplete safety check does not block an entry with empty notes', () => {
+  const badRules = Object.assign({}, rules, { idFormats: ['(zzz'] });
+  assert.strictEqual(LeakLog.createEntry(Object.assign({}, good, { notes: '' }), badRules, []).ok, true);
+});
+
+const raw = [
+  { id: 'LK-002', when: '2026-10-26T14:30:00.000Z', kind: 'ip', how: 'pasted', where: 'claude_ai',
+    found: 'self', reachable: 'dont_know', actions: ['deleted'], notes: 'ok' }
+];
+
+test('sanitizeEntries drops non-objects, missing or invalid fields, and keeps valid entries unchanged', () => {
+  const valid = LeakLog.createEntry(good, rules, []).entry;
+  const bad = [
+    null,
+    'a string',
+    Object.assign({}, valid, { id: 'LK-009', kind: undefined }),
+    Object.assign({}, valid, { id: 'LK-010', when: 'not a date' })
+  ];
+  const out = LeakLog.sanitizeEntries([valid].concat(bad));
+  assert.strictEqual(out.dropped, 4);
+  assert.deepStrictEqual(out.entries, [valid]);
+});
+
+test('sanitizeEntries strips unknown keys from entries it keeps', () => {
+  const out = LeakLog.sanitizeEntries([Object.assign({}, raw[0], { secret: 'x', name: 'A Person' })]);
+  assert.strictEqual(out.dropped, 0);
+  assert.deepStrictEqual(Object.keys(out.entries[0]).sort(),
+    ['actions', 'found', 'how', 'id', 'kind', 'notes', 'reachable', 'when', 'where']);
+});
+
+test('sanitizeEntries coerces actions, dedupes and canonicalises them, and truncates notes', () => {
+  const out = LeakLog.sanitizeEntries([Object.assign({}, raw[0], {
+    actions: 'deleted', notes: 'x'.repeat(LeakLog.NOTES_MAX + 50)
+  }), Object.assign({}, raw[0], { id: 'LK-003', actions: ['told_contact', 'bogus', 'deleted', 'deleted'], notes: 42 })]);
+  assert.strictEqual(out.dropped, 0);
+  assert.deepStrictEqual(out.entries[0].actions, ['deleted']);
+  assert.strictEqual(out.entries[0].notes.length, LeakLog.NOTES_MAX);
+  assert.deepStrictEqual(out.entries[1].actions, ['deleted', 'told_contact']);
+  assert.strictEqual(out.entries[1].notes, '');
+});
+
+test('sanitizeEntries returns nothing for non-array input', () => {
+  assert.deepStrictEqual(LeakLog.sanitizeEntries({ id: 'LK-001' }), { entries: [], dropped: 0 });
+  assert.deepStrictEqual(LeakLog.sanitizeEntries(null), { entries: [], dropped: 0 });
+});
+
+test('reportRows does not throw on null, empty or valid entries, and tolerates non-array actions', () => {
+  const rows = LeakLog.reportRows([null, {}, raw[0]]);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(LeakLog.reportRows([Object.assign({}, raw[0], { actions: 'deleted' })])[0].actions, 'None recorded');
+});
+
+test('exportReport of sanitised stored entries contains only whitelisted keys', () => {
+  const kept = LeakLog.sanitizeEntries([Object.assign({}, raw[0], { secret: 'x' })]).entries;
+  const rep = LeakLog.exportReport(kept, new Date('2026-10-26T15:00:00.000Z'));
+  rep.entries.forEach(function (e) {
+    assert.deepStrictEqual(Object.keys(e).sort(),
+      ['actions', 'found', 'how', 'id', 'kind', 'notes', 'reachable', 'when', 'where']);
+  });
+});
