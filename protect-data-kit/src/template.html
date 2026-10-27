@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Protect-Data Kit</title>
+<style>
+  :root { --fg:#1b1b1f; --bg:#fafafa; --muted:#4a4a55; --line:#c9c9d3; --accent:#1a4fa0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+  header, main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  h2, h3 { margin: 20px 0 8px; }
+  p.lead { margin: 0; color: var(--muted); }
+  [role=tablist] { display:flex; gap:8px; max-width:860px; margin:0 auto; padding:0 16px; }
+  [role=tab] { font:inherit; padding:8px 14px; border:2px solid var(--line); background:#fff; border-radius:6px 6px 0 0; cursor:pointer; }
+  [role=tab][aria-selected=true] { border-color: var(--accent); font-weight: 700; }
+  button { font:inherit; padding:8px 14px; border:2px solid var(--accent); background:#fff; color:var(--accent); border-radius:6px; cursor:pointer; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #f5a300; outline-offset: 2px; }
+  textarea { width:100%; min-height:140px; font:14px/1.4 ui-monospace, monospace; padding:8px; border:2px solid var(--line); border-radius:6px; }
+  .box { white-space: pre-wrap; word-break: break-word; border:2px solid var(--line); border-radius:6px; padding:8px; background:#fff; min-height:48px; font:14px/1.4 ui-monospace, monospace; }
+  mark { padding:0 2px; border-radius:3px; color:inherit; }
+  mark.sev-High { background:#ffd1d1; border-bottom:3px solid #b00020; }
+  mark.sev-Medium { background:#ffe7b8; border-bottom:3px dashed #8a5a00; }
+  mark.sev-Watchlist { background:#d6e6ff; border-bottom:3px dotted #1a4fa0; }
+  #verdict { font-weight:700; padding:10px; border-radius:6px; border:2px solid var(--line); background:#fff; }
+  #verdict.Stop { border-color:#b00020; } #verdict.Review { border-color:#8a5a00; } #verdict.Clear { border-color:#1a6b2f; }
+  .opts { display:flex; flex-direction:column; gap:10px; max-width:560px; }
+  .opts button { text-align:left; padding:14px; font-size:1.05rem; }
+  .card { border:2px solid var(--accent); border-radius:8px; padding:16px; background:#fff; max-width:560px; }
+  .small { color:var(--muted); font-size:.9rem; }
+  ul.findings { padding-left: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Protect-Data Kit</h1>
+  <p class="lead">Runs entirely in this browser tab. Nothing you paste here is sent anywhere.</p>
+</header>
+
+<div role="tablist" aria-label="Tools">
+  <button role="tab" id="tab-check" aria-controls="panel-check" aria-selected="true">Paste-checker</button>
+  <button role="tab" id="tab-tree" aria-controls="panel-tree" aria-selected="false">Decision tree</button>
+</div>
+
+<main>
+<section id="panel-check" role="tabpanel" aria-labelledby="tab-check">
+  <p class="small">This checker is advisory. It flags likely matches to help you notice them; it cannot stop you from pasting somewhere else, and it does not guarantee that text is safe to share.</p>
+  <label for="input"><strong>Paste text to check</strong></label>
+  <textarea id="input" spellcheck="false"></textarea>
+
+  <div id="verdict" role="status" aria-live="polite">Paste text above to check it.</div>
+  <p id="counts" class="small"></p>
+
+  <h3>Highlighted</h3>
+  <div id="highlight" class="box" aria-label="Text with matches highlighted"></div>
+
+  <h3>Findings</h3>
+  <ul id="findings" class="findings"></ul>
+
+  <h3>Redacted copy</h3>
+  <textarea id="redacted" readonly aria-label="Redacted copy of your text"></textarea>
+  <p><button id="copy" type="button">Copy redacted text</button> <span id="copy-status" class="small" role="status"></span></p>
+
+  <details>
+    <summary><strong>Your watchlist and ID formats</strong> (saved only in this browser)</summary>
+    <p><label for="watchlist">Watchlist, one per line. Optional category after a bar, e.g. <code>Project Aurora | program</code></label></p>
+    <textarea id="watchlist" spellcheck="false"></textarea>
+    <p><label for="idformats">Internal ID formats, one regular expression per line, e.g. <code>ABC-\d{5}</code></label></p>
+    <textarea id="idformats" spellcheck="false"></textarea>
+    <p>
+      <button id="export" type="button">Export rules</button>
+      <label class="small">Import rules <input id="import" type="file" accept="application/json,.json"></label>
+      <button id="reset" type="button">Reset to defaults</button>
+    </p>
+    <p id="status" class="small" role="status"></p>
+  </details>
+
+  <h3>What this cannot catch</h3>
+  <ul>
+    <li>Unpublished results written in ordinary prose.</li>
+    <li>Images and screenshots.</li>
+    <li>Attachments and files you upload.</li>
+    <li>Anything that is not on your watchlist and does not match a pattern.</li>
+  </ul>
+</section>
+
+<section id="panel-tree" role="tabpanel" aria-labelledby="tab-tree" hidden>
+  <div id="tree-body"></div>
+</section>
+</main>
+
+<script type="application/json" id="embedded-rules">/*__RULES__*/</script>
+<script>/*__DETECT__*/</script>
+<script>/*__TREE__*/</script>
+<script>/*__APP__*/</script>
+</body>
+</html>

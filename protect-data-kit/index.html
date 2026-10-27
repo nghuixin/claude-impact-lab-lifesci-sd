@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Protect-Data Kit</title>
+<style>
+  :root { --fg:#1b1b1f; --bg:#fafafa; --muted:#4a4a55; --line:#c9c9d3; --accent:#1a4fa0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui, sans-serif; color:var(--fg); background:var(--bg); }
+  header, main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  h2, h3 { margin: 20px 0 8px; }
+  p.lead { margin: 0; color: var(--muted); }
+  [role=tablist] { display:flex; gap:8px; max-width:860px; margin:0 auto; padding:0 16px; }
+  [role=tab] { font:inherit; padding:8px 14px; border:2px solid var(--line); background:#fff; border-radius:6px 6px 0 0; cursor:pointer; }
+  [role=tab][aria-selected=true] { border-color: var(--accent); font-weight: 700; }
+  button { font:inherit; padding:8px 14px; border:2px solid var(--accent); background:#fff; color:var(--accent); border-radius:6px; cursor:pointer; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #f5a300; outline-offset: 2px; }
+  textarea { width:100%; min-height:140px; font:14px/1.4 ui-monospace, monospace; padding:8px; border:2px solid var(--line); border-radius:6px; }
+  .box { white-space: pre-wrap; word-break: break-word; border:2px solid var(--line); border-radius:6px; padding:8px; background:#fff; min-height:48px; font:14px/1.4 ui-monospace, monospace; }
+  mark { padding:0 2px; border-radius:3px; color:inherit; }
+  mark.sev-High { background:#ffd1d1; border-bottom:3px solid #b00020; }
+  mark.sev-Medium { background:#ffe7b8; border-bottom:3px dashed #8a5a00; }
+  mark.sev-Watchlist { background:#d6e6ff; border-bottom:3px dotted #1a4fa0; }
+  #verdict { font-weight:700; padding:10px; border-radius:6px; border:2px solid var(--line); background:#fff; }
+  #verdict.Stop { border-color:#b00020; } #verdict.Review { border-color:#8a5a00; } #verdict.Clear { border-color:#1a6b2f; }
+  .opts { display:flex; flex-direction:column; gap:10px; max-width:560px; }
+  .opts button { text-align:left; padding:14px; font-size:1.05rem; }
+  .card { border:2px solid var(--accent); border-radius:8px; padding:16px; background:#fff; max-width:560px; }
+  .small { color:var(--muted); font-size:.9rem; }
+  ul.findings { padding-left: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Protect-Data Kit</h1>
+  <p class="lead">Runs entirely in this browser tab. Nothing you paste here is sent anywhere.</p>
+</header>
+
+<div role="tablist" aria-label="Tools">
+  <button role="tab" id="tab-check" aria-controls="panel-check" aria-selected="true">Paste-checker</button>
+  <button role="tab" id="tab-tree" aria-controls="panel-tree" aria-selected="false">Decision tree</button>
+</div>
+
+<main>
+<section id="panel-check" role="tabpanel" aria-labelledby="tab-check">
+  <p class="small">This checker is advisory. It flags likely matches to help you notice them; it cannot stop you from pasting somewhere else, and it does not guarantee that text is safe to share.</p>
+  <label for="input"><strong>Paste text to check</strong></label>
+  <textarea id="input" spellcheck="false"></textarea>
+
+  <div id="verdict" role="status" aria-live="polite">Paste text above to check it.</div>
+  <p id="counts" class="small"></p>
+
+  <h3>Highlighted</h3>
+  <div id="highlight" class="box" aria-label="Text with matches highlighted"></div>
+
+  <h3>Findings</h3>
+  <ul id="findings" class="findings"></ul>
+
+  <h3>Redacted copy</h3>
+  <textarea id="redacted" readonly aria-label="Redacted copy of your text"></textarea>
+  <p><button id="copy" type="button">Copy redacted text</button> <span id="copy-status" class="small" role="status"></span></p>
+
+  <details>
+    <summary><strong>Your watchlist and ID formats</strong> (saved only in this browser)</summary>
+    <p><label for="watchlist">Watchlist, one per line. Optional category after a bar, e.g. <code>Project Aurora | program</code></label></p>
+    <textarea id="watchlist" spellcheck="false"></textarea>
+    <p><label for="idformats">Internal ID formats, one regular expression per line, e.g. <code>ABC-\d{5}</code></label></p>
+    <textarea id="idformats" spellcheck="false"></textarea>
+    <p>
+      <button id="export" type="button">Export rules</button>
+      <label class="small">Import rules <input id="import" type="file" accept="application/json,.json"></label>
+      <button id="reset" type="button">Reset to defaults</button>
+    </p>
+    <p id="status" class="small" role="status"></p>
+  </details>
+
+  <h3>What this cannot catch</h3>
+  <ul>
+    <li>Unpublished results written in ordinary prose.</li>
+    <li>Images and screenshots.</li>
+    <li>Attachments and files you upload.</li>
+    <li>Anything that is not on your watchlist and does not match a pattern.</li>
+  </ul>
+</section>
+
+<section id="panel-tree" role="tabpanel" aria-labelledby="tab-tree" hidden>
+  <div id="tree-body"></div>
+</section>
+</main>
+
+<script type="application/json" id="embedded-rules">{"version":1,"settings":{"minSeqLen":20},"detectors":[{"id":"sequence","type":"builtin","fn":"sequence","label":"Sequence","severity":"High","placeholder":"SEQUENCE","reason":"Long run of nucleotide or amino-acid letters; looks like a biological sequence."},{"id":"smiles","type":"builtin","fn":"smiles","label":"Chemical structure (SMILES)","severity":"High","placeholder":"STRUCTURE","reason":"Looks like a SMILES structure string. This is a heuristic and can be wrong."},{"id":"inchi","type":"regex","pattern":"InChI=1S?\\/[^\\s]+","flags":"","label":"InChI string","severity":"High","placeholder":"STRUCTURE","reason":"InChI string; encodes a chemical structure."},{"id":"assay-values","type":"regex","pattern":"\\b(?:IC50|EC50|GI50|CC50|Ki|Kd)\\s*(?:=|:|≈|~|\u003c|>|of|was|is)?\\s*\\d+(?:\\.\\d+)?\\s*(?:pM|nM|µM|uM|mM)\\b|\\b\\d+(?:\\.\\d+)?\\s*%\\s*inhibition\\b|\\bp\\s*[\u003c=>]\\s*0?\\.\\d+","flags":"i","label":"Assay or result value","severity":"Medium","placeholder":"ASSAY","reason":"Looks like a potency, inhibition or significance result."},{"id":"assay-header","type":"regex","pattern":"\\b(?:IC50|EC50|GI50|CC50|Ki|Kd)[ _]?(?:\\((?:pM|nM|uM|µM|mM)\\)|(?:pM|nM|uM|µM|mM)\\b)","flags":"i","label":"Assay column header","severity":"Medium","placeholder":"ASSAY","reason":"Column name for a potency measurement with units."},{"id":"assay-row","type":"regex","pattern":"^[^\\n]*(?\u003c!\\d)\\d+\\.\\d+[,\\t][^\\n]*(?\u003c!\\d)\\d+\\.\\d+[^\\n]*$","flags":"m","label":"Numeric table row","severity":"Medium","placeholder":"ASSAY","reason":"A table row with several decimal values; may be assay data."},{"id":"phi-email","type":"regex","pattern":"(?\u003c![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}","flags":"","label":"Email address","severity":"High","placeholder":"PHI","reason":"Email address; personal contact information."},{"id":"phi-ssn","type":"regex","pattern":"\\b\\d{3}-\\d{2}-\\d{4}\\b","flags":"","label":"SSN-shaped number","severity":"High","placeholder":"PHI","reason":"Matches the shape of a social security number."},{"id":"phi-phone","type":"regex","pattern":"(?\u003c!\\d)(?:\\+?1[ .-]?)?\\(?\\d{3}\\)?[ .-]\\d{3}[ .-]\\d{4}(?!\\d)","flags":"","label":"Phone number","severity":"High","placeholder":"PHI","reason":"Phone number; personal contact information."},{"id":"phi-mrn","type":"regex","pattern":"\\bMRN\\s*[:#]?\\s*\\d{5,}\\b","flags":"i","label":"Medical record number","severity":"High","placeholder":"PHI","reason":"Medical record number."},{"id":"phi-dob","type":"regex","pattern":"\\b(?:DOB|D\\.O\\.B\\.?|date of birth)\\s*[:\\-]?\\s*\\d{1,4}[\\/\\-.]\\d{1,2}[\\/\\-.]\\d{1,4}\\b","flags":"i","label":"Date of birth","severity":"High","placeholder":"PHI","reason":"Date of birth."},{"id":"phi-name-date","type":"regex","pattern":"\\b[A-Z][a-z]+ [A-Z][a-z]+,? \\(?\\d{1,2}[\\/-]\\d{1,2}[\\/-]\\d{2,4}\\)?","flags":"","label":"Name with date","severity":"High","placeholder":"PHI","reason":"A person's name next to a date; may identify a participant."},{"id":"secret","type":"regex","pattern":"\\bsk-ant-[A-Za-z0-9_-]{20,}|\\bAKIA[0-9A-Z]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{36,}|\\bxox[baprs]-[A-Za-z0-9-]{10,}|(?:api[_-]?key|secret|token|password)\\s*[:=]\\s*['\"]?[A-Za-z0-9_-]{16,}","flags":"i","label":"Secret or API key","severity":"High","placeholder":"SECRET","reason":"Looks like an API key, token or password."}],"idFormats":[],"watchlist":[]}</script>
+<script>const Detect = (function () {
+  const SEVERITY_RANK = { High: 3, Medium: 2, Watchlist: 1 };
+
+  function isValidDetector(d) {
+    if (!d || typeof d !== 'object') return false;
+    if (typeof d.id !== 'string' || typeof d.label !== 'string' || typeof d.placeholder !== 'string') return false;
+    if (!Object.prototype.hasOwnProperty.call(SEVERITY_RANK, d.severity)) return false;
+    if (d.type === 'builtin') return typeof d.fn === 'string';
+    if (d.type === 'regex' || d.type === undefined) return typeof d.pattern === 'string';
+    return false;
+  }
+
+  function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function compileRegex(pattern, flags) {
+    const f = flags || '';
+    return new RegExp(pattern, f.indexOf('g') === -1 ? f + 'g' : f);
+  }
+
+  function collect(re, text) {
+    const out = [];
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      out.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
+    }
+    return out;
+  }
+
+  // Builtin detectors take (text, settings) and return [{start, end, text}].
+  const BUILTINS = {
+    sequence: function (text, settings) {
+      const n = settings.minSeqLen || 20;
+      const nucleotide = new RegExp('(?<![A-Za-z])[ACGTUNacgtun]{' + n + ',}(?![A-Za-z])', 'g');
+      const protein = new RegExp('(?<![A-Za-z])[ACDEFGHIKLMNPQRSTVWY]{' + n + ',}(?![A-Za-z])', 'g');
+      // Ignore low-complexity runs (fewer than 4 distinct letters, e.g. 'aaaa...' or 'AKIAAAAA...'):
+      // they are not sequence data, and they would otherwise shadow the secret detector.
+      return collect(nucleotide, text).concat(collect(protein, text)).filter(function (m) {
+        return new Set(m.text.toUpperCase()).size >= 4;
+      });
+    },
+    smiles: function (text) {
+      const token = /[^\s,;"'`]+/g;
+      const wholeToken = /^(?:Cl|Br|[BCNOSPFIHcnosp]|\[[^\]\s]+\]|[0-9]|%\d\d|[=#$:\/\\@+\-.()])+$/;
+      return collect(token, text).filter(function (t) {
+        if (t.text.length < 12 || !wholeToken.test(t.text)) return false;
+        if (!/[0-9=#(\[]/.test(t.text)) return false;
+        return (t.text.match(/[Cc]/g) || []).length >= 4;
+      });
+    }
+  };
+
+  function scan(text, rules) {
+    const errors = [];
+    const raw = [];
+    const settings = rules.settings || {};
+
+    function add(found, meta) {
+      found.forEach(function (f) { raw.push(Object.assign({}, f, meta)); });
+    }
+
+    (rules.detectors || []).forEach(function (d) {
+      if (!isValidDetector(d)) {
+        const name = d && typeof d === 'object' && d.id != null ? String(d.id) : '(unnamed)';
+        errors.push('Malformed detector skipped: ' + name);
+        return;
+      }
+      const meta = { id: d.id, label: d.label, severity: d.severity, reason: d.reason, placeholder: d.placeholder };
+      try {
+        if (d.type === 'builtin') {
+          const fn = BUILTINS[d.fn];
+          if (!fn) { errors.push('Unknown builtin detector: ' + d.fn); return; }
+          add(fn(text, settings), meta);
+        } else {
+          add(collect(compileRegex(d.pattern, d.flags), text), meta);
+        }
+      } catch (e) {
+        errors.push('Detector ' + d.id + ': ' + e.message);
+      }
+    });
+
+    (rules.idFormats || []).forEach(function (p) {
+      try {
+        add(collect(compileRegex(p, 'g'), text), {
+          id: 'id-format', label: 'Internal ID', severity: 'Medium',
+          reason: 'Matches an internal ID format you defined.', placeholder: 'ID'
+        });
+      } catch (e) {
+        errors.push('ID format "' + p + '": ' + e.message);
+      }
+    });
+
+    (rules.watchlist || []).forEach(function (w) {
+      const entry = typeof w === 'string' ? { term: w } : w;
+      const term = (entry.term || '').trim();
+      if (!term) return;
+      const category = entry.category || 'term';
+      const re = new RegExp('(?<![A-Za-z0-9_])' + escapeRegExp(term) + '(?![A-Za-z0-9_])', 'gi');
+      add(collect(re, text), {
+        id: 'watchlist', label: 'Watchlist: ' + category, severity: 'Watchlist',
+        reason: 'On your watchlist (' + category + ').', placeholder: 'WATCHLIST:' + category
+      });
+    });
+
+    const ranked = raw.slice().sort(function (a, b) {
+      return (SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]) ||
+        ((b.end - b.start) - (a.end - a.start)) ||
+        (a.start - b.start);
+    });
+    const kept = [];
+    ranked.forEach(function (m) {
+      const clash = kept.some(function (k) { return m.start < k.end && k.start < m.end; });
+      if (!clash) kept.push(m);
+    });
+    kept.sort(function (a, b) { return a.start - b.start; });
+
+    const counts = { High: 0, Medium: 0, Watchlist: 0 };
+    kept.forEach(function (m) { counts[m.severity]++; });
+    const verdict = counts.High > 0 ? 'Stop' : (kept.length > 0 ? 'Review' : 'Clear');
+    return { matches: kept, counts: counts, verdict: verdict, errors: errors };
+  }
+
+  function redact(text, matches) {
+    let out = '';
+    let pos = 0;
+    matches.slice().sort(function (a, b) { return a.start - b.start; }).forEach(function (m) {
+      out += text.slice(pos, m.start) + '[' + m.placeholder + ']';
+      pos = m.end;
+    });
+    return out + text.slice(pos);
+  }
+
+  function normalizeRules(obj, base) {
+    if (!obj || typeof obj !== 'object') return { ok: false, error: 'Rules file must be a JSON object.' };
+    if (obj.version !== 1) return { ok: false, error: 'Unsupported rules version (expected 1).' };
+    const rules = {
+      version: 1,
+      settings: Object.assign({ minSeqLen: 20 }, obj.settings || {}),
+      detectors: (Array.isArray(obj.detectors) ? obj.detectors : ((base && base.detectors) || [])).filter(isValidDetector),
+      idFormats: Array.isArray(obj.idFormats) ? obj.idFormats.filter(function (x) { return typeof x === 'string'; }) : [],
+      watchlist: Array.isArray(obj.watchlist)
+        ? obj.watchlist.filter(function (w) { return typeof w === 'string' || (w && typeof w.term === 'string'); })
+        : []
+    };
+    return { ok: true, rules: rules };
+  }
+
+  return { scan: scan, redact: redact, normalizeRules: normalizeRules, _collect: collect, _builtins: BUILTINS };
+})();
+
+if (typeof module !== 'undefined') module.exports = Detect;
+</script>
+<script>const Tree = (function () {
+  const TRUSTED_WHERE = ['claude_ai', 'claude_code', 'api'];
+
+  const QUESTIONS = {
+    what: {
+      text: 'What is it?',
+      options: [
+        ['public', 'Public or published'],
+        ['internal', 'Internal but not sensitive'],
+        ['ip', 'Unpublished research or IP (sequences, structures, results, program names)'],
+        ['patient', 'Patient or participant data'],
+        ['credentials', 'Credentials (keys, passwords, tokens)']
+      ]
+    },
+    deid: {
+      text: 'Is it de-identified or abstracted?',
+      options: [['fully', 'Yes, fully'], ['partly', 'Partly'], ['no', 'No']]
+    },
+    where: {
+      text: 'Where is it going?',
+      options: [
+        ['claude_ai', 'Claude.ai chat'],
+        ['claude_code', 'Claude Code on my machine'],
+        ['api', 'An app calling the API'],
+        ['vendor', 'A third-party tool or vendor'],
+        ['not_sure', 'Not sure']
+      ]
+    },
+    agreement: {
+      text: 'Is there an agreement in place?',
+      options: [
+        ['yes', 'Yes, my organization has approved this tool for this data'],
+        ['no', 'No'],
+        ['dont_know', "Don't know"]
+      ]
+    }
+  };
+
+  const OUTCOMES = {
+    ok_as_is: {
+      title: 'OK as is',
+      body: 'This looks like content that is already public or not sensitive.',
+      next: 'Still skim it once for anything you did not mean to include.'
+    },
+    ok_redact: {
+      title: 'OK after redacting',
+      body: 'This can go in only if it is truly de-identified or abstracted, so check it first.',
+      next: 'Run it through the paste-checker, remove or replace what it flags, then answer these questions again about the redacted text.'
+    },
+    approved_env: {
+      title: 'Only in an approved environment',
+      body: 'This should only go into a tool and setup your organization has approved for this kind of data.',
+      next: 'Ask your security or compliance contact which environment is approved. If you are not sure, treat the answer as no.'
+    },
+    dont_share: {
+      title: "Don't share",
+      body: 'This should not be put into this tool.',
+      next: 'Keep it out of prompts and files. If a credential was already pasted anywhere, rotate it now.'
+    }
+  };
+
+  const DISCLAIMER = 'This is guidance to help you think it through, not legal or compliance advice.';
+
+  function nextQuestion(a) {
+    if (!a.what) return 'what';
+    if (a.what === 'public' || a.what === 'credentials') return null;
+    if (a.what === 'internal') return a.where ? null : 'where';
+    if (!a.deid) return 'deid';
+    if (!a.where) return 'where';
+    if (!a.agreement) return 'agreement';
+    return null;
+  }
+
+  function outcome(a) {
+    if (nextQuestion(a) !== null) return null;
+    if (a.what === 'credentials') return 'dont_share';
+    if (a.what === 'public') return 'ok_as_is';
+    if (a.what === 'internal') return TRUSTED_WHERE.indexOf(a.where) !== -1 ? 'ok_as_is' : 'approved_env';
+    if (a.what === 'patient' && a.deid !== 'fully' && a.agreement === 'no') return 'dont_share';
+    if (a.agreement === 'dont_know') return 'approved_env';
+    if (a.deid === 'fully' && TRUSTED_WHERE.indexOf(a.where) !== -1 && (a.agreement === 'yes' || a.agreement === 'no')) return 'ok_redact';
+    return 'approved_env';
+  }
+
+  return { QUESTIONS: QUESTIONS, OUTCOMES: OUTCOMES, DISCLAIMER: DISCLAIMER, nextQuestion: nextQuestion, outcome: outcome };
+})();
+
+if (typeof module !== 'undefined') module.exports = Tree;
+</script>
+<script>(function () {
+  'use strict';
+
+  var embedded = JSON.parse(document.getElementById('embedded-rules').textContent);
+  var STORE_KEY = 'pdk.rules.v1';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function defaults() { return Detect.normalizeRules(embedded).rules; }
+
+  function loadRules() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (saved) {
+        var n = Detect.normalizeRules(saved, embedded);
+        if (n.ok) return n.rules;
+      }
+    } catch (e) { /* fall through to defaults */ }
+    return defaults();
+  }
+
+  var rules = loadRules();
+
+  function setStatus(msg) { $('status').textContent = msg; }
+
+  function saveRules() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(rules)); setStatus(''); }
+    catch (e) { setStatus('Could not save in this browser; your changes last for this tab only.'); }
+  }
+
+  // ---- watchlist helpers
+  function parseWatchlist(text) {
+    return text.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+      var p = l.split('|');
+      return { term: p[0].trim(), category: (p[1] || '').trim() || 'term' };
+    });
+  }
+  function formatWatchlist(list) {
+    return list.map(function (w) {
+      var e = typeof w === 'string' ? { term: w } : w;
+      return e.category && e.category !== 'term' ? e.term + ' | ' + e.category : e.term;
+    }).join('\n');
+  }
+  function parseLines(text) {
+    return text.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+  }
+  function syncInputs() {
+    $('watchlist').value = formatWatchlist(rules.watchlist);
+    $('idformats').value = rules.idFormats.join('\n');
+  }
+
+  // ---- checker
+  var VERDICT_TEXT = {
+    Clear: 'Clear: no matches found. This is not a guarantee that the text is safe to share.',
+    Review: 'Review: possible matches found. Check each one below.',
+    Stop: 'Stop: likely sensitive content found. Remove or redact it before sending it anywhere.'
+  };
+
+  function renderHighlights(container, text, matches) {
+    container.textContent = '';
+    var pos = 0;
+    matches.forEach(function (m) {
+      if (m.start > pos) container.appendChild(document.createTextNode(text.slice(pos, m.start)));
+      var mark = document.createElement('mark');
+      mark.className = 'sev-' + m.severity;
+      mark.textContent = m.text;
+      mark.title = m.label + ': ' + m.reason;
+      container.appendChild(mark);
+      pos = m.end;
+    });
+    if (pos < text.length) container.appendChild(document.createTextNode(text.slice(pos)));
+  }
+
+  function renderFindings(list, matches) {
+    list.textContent = '';
+    matches.forEach(function (m) {
+      var li = document.createElement('li');
+      li.textContent = '[' + m.severity + '] ' + m.label + ': ' + m.reason + ' Matched: ' + m.text;
+      list.appendChild(li);
+    });
+  }
+
+  function run() {
+    var text = $('input').value;
+    if (!text) {
+      $('verdict').className = '';
+      $('verdict').textContent = 'Paste text above to check it.';
+      $('counts').textContent = '';
+      $('highlight').textContent = '';
+      $('findings').textContent = '';
+      $('redacted').value = '';
+      return;
+    }
+    var r = Detect.scan(text, rules);
+    $('verdict').className = r.verdict;
+    $('verdict').textContent = VERDICT_TEXT[r.verdict];
+    $('counts').textContent = 'High: ' + r.counts.High + '   Medium: ' + r.counts.Medium + '   Watchlist: ' + r.counts.Watchlist;
+    renderHighlights($('highlight'), text, r.matches);
+    renderFindings($('findings'), r.matches);
+    $('redacted').value = Detect.redact(text, r.matches);
+    if (r.errors.length) setStatus('Some rules could not be applied: ' + r.errors.join(' | '));
+  }
+
+  $('input').addEventListener('input', run);
+
+  $('copy').addEventListener('click', function () {
+    var box = $('redacted');
+    box.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(box.value).then(
+        function () { $('copy-status').textContent = 'Copied.'; },
+        function () { document.execCommand('copy'); $('copy-status').textContent = 'Copied.'; }
+      );
+    } else {
+      document.execCommand('copy');
+      $('copy-status').textContent = 'Copied.';
+    }
+  });
+
+  $('watchlist').addEventListener('input', function () {
+    rules.watchlist = parseWatchlist($('watchlist').value);
+    saveRules(); run();
+  });
+  $('idformats').addEventListener('input', function () {
+    rules.idFormats = parseLines($('idformats').value);
+    saveRules(); run();
+  });
+
+  $('export').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(rules, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'rules.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $('import').addEventListener('change', function (ev) {
+    var file = ev.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var n = Detect.normalizeRules(JSON.parse(reader.result), embedded);
+        if (!n.ok) { setStatus('Import failed: ' + n.error); return; }
+        rules = n.rules;
+        saveRules(); syncInputs(); run();
+        setStatus('Imported ' + file.name + '.');
+      } catch (e) { setStatus('Import failed: that file is not valid JSON.'); }
+    };
+    reader.readAsText(file);
+  });
+
+  $('reset').addEventListener('click', function () {
+    try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+    rules = defaults();
+    syncInputs(); run();
+    setStatus('Reset to defaults.');
+  });
+
+  // ---- tabs
+  function showTab(which) {
+    ['check', 'tree'].forEach(function (t) {
+      var selected = t === which;
+      $('tab-' + t).setAttribute('aria-selected', String(selected));
+      $('panel-' + t).hidden = !selected;
+    });
+  }
+  $('tab-check').addEventListener('click', function () { showTab('check'); });
+  $('tab-tree').addEventListener('click', function () { showTab('tree'); });
+
+  // ---- decision tree
+  var answers = {};
+
+  function renderTree() {
+    var body = $('tree-body');
+    body.textContent = '';
+    var q = Tree.nextQuestion(answers);
+
+    if (q) {
+      var h = document.createElement('h2');
+      h.textContent = Tree.QUESTIONS[q].text;
+      body.appendChild(h);
+      var wrap = document.createElement('div');
+      wrap.className = 'opts';
+      Tree.QUESTIONS[q].options.forEach(function (opt) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = opt[1];
+        b.addEventListener('click', function () { answers[q] = opt[0]; renderTree(); });
+        wrap.appendChild(b);
+      });
+      body.appendChild(wrap);
+    } else {
+      var o = Tree.OUTCOMES[Tree.outcome(answers)];
+      var card = document.createElement('div');
+      card.className = 'card';
+      card.setAttribute('role', 'status');
+      var t = document.createElement('h2'); t.textContent = o.title;
+      var p1 = document.createElement('p'); p1.textContent = o.body;
+      var p2 = document.createElement('p'); p2.textContent = 'Next step: ' + o.next;
+      var p3 = document.createElement('p'); p3.className = 'small'; p3.textContent = Tree.DISCLAIMER;
+      card.appendChild(t); card.appendChild(p1); card.appendChild(p2); card.appendChild(p3);
+      body.appendChild(card);
+    }
+
+    if (Object.keys(answers).length) {
+      var restart = document.createElement('p');
+      var rb = document.createElement('button');
+      rb.type = 'button';
+      rb.textContent = 'Start over';
+      rb.addEventListener('click', function () { answers = {}; renderTree(); });
+      restart.appendChild(rb);
+      body.appendChild(restart);
+    }
+  }
+
+  syncInputs();
+  renderTree();
+})();
+</script>
+</body>
+</html>
