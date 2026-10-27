@@ -8,7 +8,9 @@ const parts = {
   RULES: JSON.stringify(JSON.parse(read('rules.json'))).replace(/</g, '\\u003c'),
   DETECT: read('src/detect.js'),
   TREE: read('src/tree.js'),
-  APP: read('src/app.js')
+  LEAKLOG: read('src/leaklog.js'),
+  APP: read('src/app.js'),
+  LEAKUI: read('src/leaklog-ui.js')
 };
 
 let html = read('src/template.html');

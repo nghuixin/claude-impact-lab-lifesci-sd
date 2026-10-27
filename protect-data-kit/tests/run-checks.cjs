@@ -54,6 +54,10 @@ if (fs.existsSync(builtPath)) {
   check('index.html has no unreplaced build markers', !/\/\*__[A-Z]+__\*\//.test(html));
   check('index.html states the blind spots', /unpublished results/i.test(html) && /screenshots/i.test(html) && /attachments/i.test(html));
   check('index.html says the checker is advisory', /advisory/i.test(html));
+  check('index.html has the leak log tab', /Leak log/.test(html) && /id="panel-leak"/.test(html));
+  check('leak log tells users to describe, not paste', /Describe, do not paste/.test(html));
+  check('leak log says it is not legal or compliance advice', /record, not legal or compliance advice/.test(html));
+  check('leak log script is inlined', /const LeakLog =/.test(html) && /pdk\.leaklog\.v1/.test(html));
 }
 
 if (failures > 0) { console.log('\n' + failures + ' check(s) failed.'); process.exit(1); }

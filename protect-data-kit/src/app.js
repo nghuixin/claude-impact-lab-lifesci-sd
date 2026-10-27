@@ -19,6 +19,7 @@
   }
 
   var rules = loadRules();
+  window.PDK = { getRules: function () { return rules; } };
   var baseRules = Detect.normalizeRules(embedded).rules;
 
   // #status is only for save, import, reset and export messages (inside <details>).
@@ -175,7 +176,7 @@
 
   // ---- tabs
   function showTab(which) {
-    ['check', 'tree'].forEach(function (t) {
+    ['check', 'tree', 'leak'].forEach(function (t) {
       var selected = t === which;
       $('tab-' + t).setAttribute('aria-selected', String(selected));
       $('panel-' + t).hidden = !selected;
@@ -183,6 +184,7 @@
   }
   $('tab-check').addEventListener('click', function () { showTab('check'); });
   $('tab-tree').addEventListener('click', function () { showTab('tree'); });
+  $('tab-leak').addEventListener('click', function () { showTab('leak'); });
 
   // ---- decision tree
   var answers = {};

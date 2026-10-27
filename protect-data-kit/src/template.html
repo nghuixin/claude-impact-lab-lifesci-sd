@@ -30,6 +30,11 @@
   .card { border:2px solid var(--accent); border-radius:8px; padding:16px; background:#fff; max-width:560px; }
   .small { color:var(--muted); font-size:.9rem; }
   ul.findings { padding-left: 20px; }
+  table.leak-table { border-collapse: collapse; width: 100%; background: #fff; font-size: .9rem; }
+  table.leak-table th, table.leak-table td { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+  fieldset { border: 2px solid var(--line); border-radius: 6px; }
+  select, input[type=datetime-local] { font: inherit; padding: 6px; max-width: 100%; }
+  @media print { header, [role=tablist], .no-print { display: none; } body { background: #fff; } }
 </style>
 </head>
 <body>
@@ -41,6 +46,7 @@
 <div role="tablist" aria-label="Tools">
   <button role="tab" id="tab-check" aria-controls="panel-check" aria-selected="true">Paste-checker</button>
   <button role="tab" id="tab-tree" aria-controls="panel-tree" aria-selected="false">Decision tree</button>
+  <button role="tab" id="tab-leak" aria-controls="panel-leak" aria-selected="false">Leak log</button>
 </div>
 
 <main>
@@ -89,11 +95,38 @@
 <section id="panel-tree" role="tabpanel" aria-labelledby="tab-tree" hidden>
   <div id="tree-body"></div>
 </section>
+
+<section id="panel-leak" role="tabpanel" aria-labelledby="tab-leak" hidden>
+  <h2>Leak log</h2>
+  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice.</p>
+  <form id="leak-form" novalidate>
+    <p><label for="leak-when">When</label><br><input id="leak-when" type="datetime-local"></p>
+    <p><label for="leak-kind">What kind of data</label><br><select id="leak-kind"></select></p>
+    <p><label for="leak-how">How it leaked</label><br><select id="leak-how"></select></p>
+    <p><label for="leak-where">Where it went</label><br><select id="leak-where"></select></p>
+    <p><label for="leak-found">How it was found</label><br><select id="leak-found"></select></p>
+    <p><label for="leak-reachable">Is it still reachable?</label><br><select id="leak-reachable"></select></p>
+    <fieldset><legend>Actions taken</legend><div id="leak-actions"></div></fieldset>
+    <p><label for="leak-notes">Notes (up to 500 characters, describe do not paste)</label><br><textarea id="leak-notes" maxlength="500" spellcheck="false"></textarea></p>
+    <p><button id="leak-save" type="submit">Save entry</button></p>
+  </form>
+  <p id="leak-errors" class="small" role="alert"></p>
+  <p id="leak-status" class="small" role="status"></p>
+  <h3>Entries</h3>
+  <div id="leak-table-wrap"></div>
+  <p class="no-print">
+    <button id="leak-export" type="button">Export JSON</button>
+    <button id="leak-print" type="button">Print report</button>
+    <button id="leak-clear" type="button">Clear all entries</button>
+  </p>
+</section>
 </main>
 
 <script type="application/json" id="embedded-rules">/*__RULES__*/</script>
 <script>/*__DETECT__*/</script>
 <script>/*__TREE__*/</script>
+<script>/*__LEAKLOG__*/</script>
 <script>/*__APP__*/</script>
+<script>/*__LEAKUI__*/</script>
 </body>
 </html>
