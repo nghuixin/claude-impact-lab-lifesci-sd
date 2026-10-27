@@ -44,6 +44,27 @@ cases.forEach(function (c) {
   });
 });
 
+test('unrecognized agreement value fails safe to approved_env', () => {
+  assert.strictEqual(Tree.outcome({ what: 'patient', deid: 'fully', where: 'claude_ai', agreement: 'maybe' }), 'approved_env');
+  assert.strictEqual(Tree.outcome({ what: 'ip', deid: 'fully', where: 'claude_ai', agreement: 'maybe' }), 'approved_env');
+});
+
+test('every complete answer set maps to a known outcome id', () => {
+  const values = function (q) { return Tree.QUESTIONS[q].options.map(function (o) { return o[0]; }); };
+  values('what').forEach(function (what) {
+    values('deid').forEach(function (deid) {
+      values('where').forEach(function (where) {
+        values('agreement').forEach(function (agreement) {
+          const answers = { what: what, deid: deid, where: where, agreement: agreement };
+          if (Tree.nextQuestion(answers) === null) {
+            assert.ok(Tree.OUTCOMES[Tree.outcome(answers)], JSON.stringify(answers));
+          }
+        });
+      });
+    });
+  });
+});
+
 test("'dont_know' never behaves like 'yes'", () => {
   ['ip', 'patient'].forEach(function (what) {
     ['no', 'partly', 'fully'].forEach(function (deid) {

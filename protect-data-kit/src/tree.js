@@ -78,7 +78,7 @@ const Tree = (function () {
     if (a.what === 'internal') return TRUSTED_WHERE.indexOf(a.where) !== -1 ? 'ok_as_is' : 'approved_env';
     if (a.what === 'patient' && a.deid !== 'fully' && a.agreement === 'no') return 'dont_share';
     if (a.agreement === 'dont_know') return 'approved_env';
-    if (a.deid === 'fully' && TRUSTED_WHERE.indexOf(a.where) !== -1) return 'ok_redact';
+    if (a.deid === 'fully' && TRUSTED_WHERE.indexOf(a.where) !== -1 && (a.agreement === 'yes' || a.agreement === 'no')) return 'ok_redact';
     return 'approved_env';
   }
 
