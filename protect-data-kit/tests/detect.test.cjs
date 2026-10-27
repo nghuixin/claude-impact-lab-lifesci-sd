@@ -162,3 +162,34 @@ test('normalizeRules filters malformed entries out of the base detectors fallbac
   const n = Detect.normalizeRules({ version: 1 }, base);
   assert.deepStrictEqual(n.rules.detectors, [secretRule]);
 });
+
+test('storableRules omits detectors that match the base', () => {
+  const base = { version: 1, settings: { minSeqLen: 20 }, detectors: [secretRule], idFormats: [], watchlist: [] };
+  const rules = Object.assign({}, base, { watchlist: ['Aurora'] });
+  const s = Detect.storableRules(rules, base);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(s, 'detectors'), false);
+});
+
+test('storableRules includes detectors only when they differ from the base', () => {
+  const base = { version: 1, settings: { minSeqLen: 20 }, detectors: [secretRule], idFormats: [], watchlist: [] };
+  const changed = Object.assign({}, base, { detectors: [Object.assign({}, secretRule, { severity: 'Medium' })] });
+  assert.deepStrictEqual(Detect.storableRules(changed, base).detectors, changed.detectors);
+});
+
+test('storableRules always keeps version, settings, watchlist and idFormats', () => {
+  const base = { version: 1, settings: { minSeqLen: 20 }, detectors: [], idFormats: [], watchlist: [] };
+  const rules = { version: 1, settings: { minSeqLen: 30 }, detectors: [], idFormats: ['ABC-\\d{5}'], watchlist: [{ term: 'Aurora', category: 'program' }] };
+  const s = Detect.storableRules(rules, base);
+  assert.strictEqual(s.version, 1);
+  assert.deepStrictEqual(s.settings, { minSeqLen: 30 });
+  assert.deepStrictEqual(s.idFormats, ['ABC-\\d{5}']);
+  assert.deepStrictEqual(s.watchlist, [{ term: 'Aurora', category: 'program' }]);
+});
+
+test('storableRules output round-trips through normalizeRules to the original rules', () => {
+  const base = Detect.normalizeRules({ version: 1, settings: {}, detectors: [secretRule] }).rules;
+  const rules = Object.assign({}, base, { idFormats: ['X-\\d+'], watchlist: [{ term: 'Aurora', category: 'program' }] });
+  const back = Detect.normalizeRules(Detect.storableRules(rules, base), base);
+  assert.strictEqual(back.ok, true);
+  assert.deepStrictEqual(back.rules, rules);
+});
