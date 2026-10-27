@@ -34,7 +34,7 @@
   table.leak-table th, table.leak-table td { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
   fieldset { border: 2px solid var(--line); border-radius: 6px; }
   select, input[type=datetime-local] { font: inherit; padding: 6px; max-width: 100%; }
-  @media print { header, [role=tablist], .no-print { display: none; } body { background: #fff; } }
+  @media print { header, [role=tablist], .no-print { display: none; } #leak-form, #leak-errors, #leak-status, #panel-leak > p.small { display: none; } body { background: #fff; } }
 </style>
 </head>
 <body>
@@ -81,6 +81,7 @@
       <button id="reset" type="button">Reset to defaults</button>
     </p>
     <p id="status" class="small" role="status"></p>
+    <p class="small">On a shared computer, click Reset to defaults and Clear all entries when you finish.</p>
   </details>
 
   <h3>What this cannot catch</h3>
@@ -98,7 +99,7 @@
 
 <section id="panel-leak" role="tabpanel" aria-labelledby="tab-leak" hidden>
   <h2>Leak log</h2>
-  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice.</p>
+  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice. On a shared computer, click Reset to defaults and Clear all entries when you finish.</p>
   <form id="leak-form" novalidate>
     <p><label for="leak-when">When</label><br><input id="leak-when" type="datetime-local"></p>
     <p><label for="leak-kind">What kind of data</label><br><select id="leak-kind"></select></p>
@@ -219,15 +220,21 @@
     });
 
     (rules.watchlist || []).forEach(function (w) {
-      const entry = typeof w === 'string' ? { term: w } : w;
-      const term = (entry.term || '').trim();
-      if (!term) return;
-      const category = entry.category || 'term';
-      const re = new RegExp('(?<![A-Za-z0-9_])' + escapeRegExp(term) + '(?![A-Za-z0-9_])', 'gi');
-      add(collect(re, text), {
-        id: 'watchlist', label: 'Watchlist: ' + category, severity: 'Watchlist',
-        reason: 'On your watchlist (' + category + ').', placeholder: 'WATCHLIST:' + category
-      });
+      try {
+        const entry = typeof w === 'string' ? { term: w } : w;
+        if (!entry || typeof entry !== 'object') return;
+        const term = (typeof entry.term === 'string' ? entry.term : '').trim();
+        if (!term) return;
+        const category = entry.category || 'term';
+        const re = new RegExp('(?<![A-Za-z0-9_])' + escapeRegExp(term) + '(?![A-Za-z0-9_])', 'gi');
+        add(collect(re, text), {
+          id: 'watchlist', label: 'Watchlist: ' + category, severity: 'Watchlist',
+          reason: 'On your watchlist (' + category + ').', placeholder: 'WATCHLIST:' + category
+        });
+      } catch (e) {
+        // Fixed text only: the term may be sensitive.
+        errors.push('A watchlist term could not be checked in this browser.');
+      }
     });
 
     const ranked = raw.slice().sort(function (a, b) {
@@ -647,6 +654,18 @@ if (typeof module !== 'undefined') module.exports = LeakLog;
   }
 
   function run() {
+    try { runCheck(); } catch (e) {
+      $('highlight').textContent = '';
+      $('findings').textContent = '';
+      $('redacted').value = '';
+      $('counts').textContent = '';
+      $('scan-errors').textContent = '';
+      $('verdict').className = '';
+      $('verdict').textContent = 'Could not check this text in this browser. Do not rely on this page for it.';
+    }
+  }
+
+  function runCheck() {
     var text = $('input').value;
     if (!text) {
       $('verdict').className = '';
@@ -699,10 +718,13 @@ if (typeof module !== 'undefined') module.exports = LeakLog;
   $('export').addEventListener('click', function () {
     var blob = new Blob([JSON.stringify(rules, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    var url = URL.createObjectURL(blob);
+    a.href = url;
     a.download = 'rules.json';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   });
 
   $('import').addEventListener('change', function (ev) {
@@ -914,8 +936,14 @@ if (typeof module !== 'undefined') module.exports = LeakLog;
 
   $('leak-form').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var result = LeakLog.createEntry(readForm(), window.PDK.getRules(), entries);
     var errBox = $('leak-errors');
+    var result;
+    try {
+      result = LeakLog.createEntry(readForm(), window.PDK.getRules(), entries);
+    } catch (e) {
+      errBox.textContent = 'The safety check could not run in this browser, so nothing was saved.';
+      return;
+    }
     if (!result.ok) {
       var msg = result.errors.join(' ');
       if (result.blocked.length) {
@@ -937,10 +965,13 @@ if (typeof module !== 'undefined') module.exports = LeakLog;
   $('leak-export').addEventListener('click', function () {
     var blob = new Blob([JSON.stringify(LeakLog.exportReport(entries, new Date()), null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    var url = URL.createObjectURL(blob);
+    a.href = url;
     a.download = 'leak-report.json';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   });
 
   $('leak-print').addEventListener('click', function () { window.print(); });

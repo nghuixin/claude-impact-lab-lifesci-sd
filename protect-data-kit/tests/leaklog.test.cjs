@@ -155,3 +155,19 @@ test('exportReport of sanitised stored entries contains only whitelisted keys', 
       ['actions', 'found', 'how', 'id', 'kind', 'notes', 'reachable', 'when', 'where']);
   });
 });
+
+test('leak log fails closed when the safety check throws in an old browser', () => {
+  const Original = global.RegExp;
+  global.RegExp = new Proxy(Original, {
+    construct: function (target, args, newTarget) {
+      if (typeof args[0] === 'string' && args[0].indexOf('(?<') !== -1) throw new SyntaxError('lookbehind unsupported');
+      return Reflect.construct(target, args, newTarget === global.RegExp ? target : newTarget);
+    }
+  });
+  try {
+    const r2 = Object.assign({}, rules, { watchlist: [{ term: 'SecretTerm', category: 'term' }] });
+    let r;
+    assert.doesNotThrow(() => { r = LeakLog.createEntry(good, r2, []); });
+    assert.strictEqual(r.ok, false);
+  } finally { global.RegExp = Original; }
+});

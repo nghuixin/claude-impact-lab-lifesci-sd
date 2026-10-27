@@ -112,8 +112,14 @@
 
   $('leak-form').addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var result = LeakLog.createEntry(readForm(), window.PDK.getRules(), entries);
     var errBox = $('leak-errors');
+    var result;
+    try {
+      result = LeakLog.createEntry(readForm(), window.PDK.getRules(), entries);
+    } catch (e) {
+      errBox.textContent = 'The safety check could not run in this browser, so nothing was saved.';
+      return;
+    }
     if (!result.ok) {
       var msg = result.errors.join(' ');
       if (result.blocked.length) {
@@ -135,10 +141,13 @@
   $('leak-export').addEventListener('click', function () {
     var blob = new Blob([JSON.stringify(LeakLog.exportReport(entries, new Date()), null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    var url = URL.createObjectURL(blob);
+    a.href = url;
     a.download = 'leak-report.json';
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   });
 
   $('leak-print').addEventListener('click', function () { window.print(); });

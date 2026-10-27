@@ -94,15 +94,21 @@ const Detect = (function () {
     });
 
     (rules.watchlist || []).forEach(function (w) {
-      const entry = typeof w === 'string' ? { term: w } : w;
-      const term = (entry.term || '').trim();
-      if (!term) return;
-      const category = entry.category || 'term';
-      const re = new RegExp('(?<![A-Za-z0-9_])' + escapeRegExp(term) + '(?![A-Za-z0-9_])', 'gi');
-      add(collect(re, text), {
-        id: 'watchlist', label: 'Watchlist: ' + category, severity: 'Watchlist',
-        reason: 'On your watchlist (' + category + ').', placeholder: 'WATCHLIST:' + category
-      });
+      try {
+        const entry = typeof w === 'string' ? { term: w } : w;
+        if (!entry || typeof entry !== 'object') return;
+        const term = (typeof entry.term === 'string' ? entry.term : '').trim();
+        if (!term) return;
+        const category = entry.category || 'term';
+        const re = new RegExp('(?<![A-Za-z0-9_])' + escapeRegExp(term) + '(?![A-Za-z0-9_])', 'gi');
+        add(collect(re, text), {
+          id: 'watchlist', label: 'Watchlist: ' + category, severity: 'Watchlist',
+          reason: 'On your watchlist (' + category + ').', placeholder: 'WATCHLIST:' + category
+        });
+      } catch (e) {
+        // Fixed text only: the term may be sensitive.
+        errors.push('A watchlist term could not be checked in this browser.');
+      }
     });
 
     const ranked = raw.slice().sort(function (a, b) {

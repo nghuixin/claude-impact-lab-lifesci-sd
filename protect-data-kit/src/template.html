@@ -34,7 +34,7 @@
   table.leak-table th, table.leak-table td { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
   fieldset { border: 2px solid var(--line); border-radius: 6px; }
   select, input[type=datetime-local] { font: inherit; padding: 6px; max-width: 100%; }
-  @media print { header, [role=tablist], .no-print { display: none; } body { background: #fff; } }
+  @media print { header, [role=tablist], .no-print { display: none; } #leak-form, #leak-errors, #leak-status, #panel-leak > p.small { display: none; } body { background: #fff; } }
 </style>
 </head>
 <body>
@@ -81,6 +81,7 @@
       <button id="reset" type="button">Reset to defaults</button>
     </p>
     <p id="status" class="small" role="status"></p>
+    <p class="small">On a shared computer, click Reset to defaults and Clear all entries when you finish.</p>
   </details>
 
   <h3>What this cannot catch</h3>
@@ -98,7 +99,7 @@
 
 <section id="panel-leak" role="tabpanel" aria-labelledby="tab-leak" hidden>
   <h2>Leak log</h2>
-  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice.</p>
+  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice. On a shared computer, click Reset to defaults and Clear all entries when you finish.</p>
   <form id="leak-form" novalidate>
     <p><label for="leak-when">When</label><br><input id="leak-when" type="datetime-local"></p>
     <p><label for="leak-kind">What kind of data</label><br><select id="leak-kind"></select></p>
