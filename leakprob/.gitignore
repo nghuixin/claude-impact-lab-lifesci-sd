@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+.venv/
+build/
+dist/
+# reports contain proprietary data; never commit them
+leakprobe-out/
+reports/
+demo/output/
