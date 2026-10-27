@@ -1,7 +1,19 @@
 {
   "version": 1,
   "settings": { "minSeqLen": 20 },
-  "detectors": [],
+  "detectors": [
+    {"id":"inchi","type":"regex","pattern":"InChI=1S?\\/[^\\s]+","flags":"","label":"InChI string","severity":"High","placeholder":"STRUCTURE","reason":"InChI string; encodes a chemical structure."},
+    {"id":"assay-values","type":"regex","pattern":"\\b(?:IC50|EC50|GI50|CC50|Ki|Kd)\\s*(?:=|:|≈|~|<|>|of|was|is)?\\s*\\d+(?:\\.\\d+)?\\s*(?:pM|nM|µM|uM|mM)\\b|\\b\\d+(?:\\.\\d+)?\\s*%\\s*inhibition\\b|\\bp\\s*[<=>]\\s*0?\\.\\d+","flags":"i","label":"Assay or result value","severity":"Medium","placeholder":"ASSAY","reason":"Looks like a potency, inhibition or significance result."},
+    {"id":"assay-header","type":"regex","pattern":"\\b(?:IC50|EC50|GI50|CC50|Ki|Kd)[ _]?(?:\\((?:pM|nM|uM|µM|mM)\\)|(?:pM|nM|uM|µM|mM)\\b)","flags":"i","label":"Assay column header","severity":"Medium","placeholder":"ASSAY","reason":"Column name for a potency measurement with units."},
+    {"id":"assay-row","type":"regex","pattern":"^[^\\n]*\\d+\\.\\d+[,\\t][^\\n]*\\d+\\.\\d+[^\\n]*$","flags":"m","label":"Numeric table row","severity":"Medium","placeholder":"ASSAY","reason":"A table row with several decimal values; may be assay data."},
+    {"id":"phi-email","type":"regex","pattern":"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}","flags":"","label":"Email address","severity":"High","placeholder":"PHI","reason":"Email address; personal contact information."},
+    {"id":"phi-ssn","type":"regex","pattern":"\\b\\d{3}-\\d{2}-\\d{4}\\b","flags":"","label":"SSN-shaped number","severity":"High","placeholder":"PHI","reason":"Matches the shape of a social security number."},
+    {"id":"phi-phone","type":"regex","pattern":"(?<!\\d)(?:\\+?1[ .-]?)?\\(?\\d{3}\\)?[ .-]\\d{3}[ .-]\\d{4}(?!\\d)","flags":"","label":"Phone number","severity":"High","placeholder":"PHI","reason":"Phone number; personal contact information."},
+    {"id":"phi-mrn","type":"regex","pattern":"\\bMRN\\s*[:#]?\\s*\\d{5,}\\b","flags":"i","label":"Medical record number","severity":"High","placeholder":"PHI","reason":"Medical record number."},
+    {"id":"phi-dob","type":"regex","pattern":"\\b(?:DOB|D\\.O\\.B\\.?|date of birth)\\s*[:\\-]?\\s*\\d{1,4}[\\/\\-.]\\d{1,2}[\\/\\-.]\\d{1,4}\\b","flags":"i","label":"Date of birth","severity":"High","placeholder":"PHI","reason":"Date of birth."},
+    {"id":"phi-name-date","type":"regex","pattern":"\\b[A-Z][a-z]+ [A-Z][a-z]+,? \\(?\\d{1,2}[\\/-]\\d{1,2}[\\/-]\\d{2,4}\\)?","flags":"","label":"Name with date","severity":"High","placeholder":"PHI","reason":"A person's name next to a date; may identify a participant."},
+    {"id":"secret","type":"regex","pattern":"\\bsk-ant-[A-Za-z0-9_-]{20,}|\\bAKIA[0-9A-Z]{16}\\b|\\bgh[pousr]_[A-Za-z0-9]{36,}|\\bxox[baprs]-[A-Za-z0-9-]{10,}|(?:api[_-]?key|secret|token|password)\\s*[:=]\\s*['\"]?[A-Za-z0-9_-]{16,}","flags":"i","label":"Secret or API key","severity":"High","placeholder":"SECRET","reason":"Looks like an API key, token or password."}
+  ],
   "idFormats": [],
   "watchlist": []
 }
