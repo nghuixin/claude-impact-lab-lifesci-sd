@@ -30,6 +30,11 @@
   .card { border:2px solid var(--accent); border-radius:8px; padding:16px; background:#fff; max-width:560px; }
   .small { color:var(--muted); font-size:.9rem; }
   ul.findings { padding-left: 20px; }
+  table.leak-table { border-collapse: collapse; width: 100%; background: #fff; font-size: .9rem; }
+  table.leak-table th, table.leak-table td { border: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+  fieldset { border: 2px solid var(--line); border-radius: 6px; }
+  select, input[type=datetime-local] { font: inherit; padding: 6px; max-width: 100%; }
+  @media print { header, [role=tablist], .no-print { display: none; } body { background: #fff; } }
 </style>
 </head>
 <body>
@@ -41,6 +46,7 @@
 <div role="tablist" aria-label="Tools">
   <button role="tab" id="tab-check" aria-controls="panel-check" aria-selected="true">Paste-checker</button>
   <button role="tab" id="tab-tree" aria-controls="panel-tree" aria-selected="false">Decision tree</button>
+  <button role="tab" id="tab-leak" aria-controls="panel-leak" aria-selected="false">Leak log</button>
 </div>
 
 <main>
@@ -88,6 +94,31 @@
 
 <section id="panel-tree" role="tabpanel" aria-labelledby="tab-tree" hidden>
   <div id="tree-body"></div>
+</section>
+
+<section id="panel-leak" role="tabpanel" aria-labelledby="tab-leak" hidden>
+  <h2>Leak log</h2>
+  <p class="small">Use this to record that sensitive data was shared where it should not have been. It keeps descriptions only. Describe, do not paste: never type or paste the data itself, and do not enter the names of individuals (roles are fine). Entries stay in this browser and are sent nowhere. This is a record, not legal or compliance advice.</p>
+  <form id="leak-form" novalidate>
+    <p><label for="leak-when">When</label><br><input id="leak-when" type="datetime-local"></p>
+    <p><label for="leak-kind">What kind of data</label><br><select id="leak-kind"></select></p>
+    <p><label for="leak-how">How it leaked</label><br><select id="leak-how"></select></p>
+    <p><label for="leak-where">Where it went</label><br><select id="leak-where"></select></p>
+    <p><label for="leak-found">How it was found</label><br><select id="leak-found"></select></p>
+    <p><label for="leak-reachable">Is it still reachable?</label><br><select id="leak-reachable"></select></p>
+    <fieldset><legend>Actions taken</legend><div id="leak-actions"></div></fieldset>
+    <p><label for="leak-notes">Notes (up to 500 characters, describe do not paste)</label><br><textarea id="leak-notes" maxlength="500" spellcheck="false"></textarea></p>
+    <p><button id="leak-save" type="submit">Save entry</button></p>
+  </form>
+  <p id="leak-errors" class="small" role="alert"></p>
+  <p id="leak-status" class="small" role="status"></p>
+  <h3>Entries</h3>
+  <div id="leak-table-wrap"></div>
+  <p class="no-print">
+    <button id="leak-export" type="button">Export JSON</button>
+    <button id="leak-print" type="button">Print report</button>
+    <button id="leak-clear" type="button">Clear all entries</button>
+  </p>
 </section>
 </main>
 
@@ -350,6 +381,139 @@ if (typeof module !== 'undefined') module.exports = Detect;
 
 if (typeof module !== 'undefined') module.exports = Tree;
 </script>
+<script>const LeakLog = (function () {
+  const treeRef = typeof Tree !== 'undefined' ? Tree : require('./tree.js');
+  const detectRef = typeof Detect !== 'undefined' ? Detect : require('./detect.js');
+
+  const NOTES_MAX = 500;
+
+  const DATA_KINDS = [
+    ['ip', 'Unpublished research or IP'],
+    ['patient', 'Patient or participant data'],
+    ['credentials', 'Credentials'],
+    ['internal', 'Internal, not sensitive'],
+    ['other', 'Other']
+  ];
+  const HOW = [
+    ['pasted', 'Pasted into a chat or prompt'],
+    ['uploaded', 'Uploaded a file'],
+    ['link', 'Shared a link'],
+    ['screenshot', 'Sent a screenshot or image'],
+    ['tool_read', 'A tool read it from a prompt, file or folder'],
+    ['api_app', 'Sent through an app or API'],
+    ['other', 'Other']
+  ];
+  const WHERE = treeRef.QUESTIONS.where.options;
+  const FOUND = [
+    ['paste_checker', 'Paste-checker'],
+    ['self', 'I noticed'],
+    ['colleague', 'A colleague noticed'],
+    ['audit', 'A later audit']
+  ];
+  const REACHABLE = [['yes', 'Yes'], ['no', 'No'], ['dont_know', "Don't know"]];
+  const ACTIONS = [
+    ['deleted', 'Deleted the conversation or file'],
+    ['rotated', 'Rotated the credential'],
+    ['told_contact', 'Told the security or compliance contact'],
+    ['other', 'Other']
+  ];
+
+  const COLUMNS = [
+    ['id', 'ID'], ['when', 'When'], ['kind', 'Data'], ['how', 'How it leaked'],
+    ['where', 'Where it went'], ['found', 'How it was found'],
+    ['reachable', 'Still reachable'], ['actions', 'Actions taken'], ['notes', 'Notes']
+  ];
+
+  function values(list) { return list.map(function (o) { return o[0]; }); }
+  function labelOf(list, v) {
+    const hit = list.filter(function (o) { return o[0] === v; })[0];
+    return hit ? hit[1] : String(v);
+  }
+
+  function nextId(entries) {
+    let max = 0;
+    (entries || []).forEach(function (e) {
+      const m = /^LK-(\d+)$/.exec(e && e.id);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    });
+    return 'LK-' + String(max + 1).padStart(3, '0');
+  }
+
+  function createEntry(fields, rules, existing) {
+    const f = fields || {};
+    const errors = [];
+
+    [['kind', DATA_KINDS], ['how', HOW], ['where', WHERE], ['found', FOUND], ['reachable', REACHABLE]]
+      .forEach(function (pair) {
+        if (values(pair[1]).indexOf(f[pair[0]]) === -1) errors.push('Choose a value for "' + pair[0] + '".');
+      });
+
+    const when = typeof f.when === 'string' ? Date.parse(f.when) : NaN;
+    if (isNaN(when)) errors.push('Enter a valid date and time.');
+
+    const actions = Array.isArray(f.actions) ? f.actions : [];
+    if (actions.some(function (a) { return values(ACTIONS).indexOf(a) === -1; })) errors.push('Unknown action.');
+
+    const notes = typeof f.notes === 'string' ? f.notes : '';
+    if (notes.length > NOTES_MAX) errors.push('Notes are limited to ' + NOTES_MAX + ' characters.');
+
+    let blocked = [];
+    if (notes) {
+      blocked = detectRef.scan(notes, rules).matches.map(function (m) {
+        return { label: m.label, severity: m.severity, start: m.start, end: m.end };
+      });
+      if (blocked.length) errors.push('The notes look like they contain the data itself. Describe it instead of pasting it, then save again.');
+    }
+
+    if (errors.length) return { ok: false, errors: errors, blocked: blocked };
+
+    return {
+      ok: true,
+      entry: {
+        id: nextId(existing),
+        when: new Date(when).toISOString(),
+        kind: f.kind,
+        how: f.how,
+        where: f.where,
+        found: f.found,
+        reachable: f.reachable,
+        actions: values(ACTIONS).filter(function (a) { return actions.indexOf(a) !== -1; }),
+        notes: notes
+      }
+    };
+  }
+
+  function reportRows(entries) {
+    return (entries || []).map(function (e) {
+      return {
+        id: e.id,
+        when: String(e.when).replace('T', ' ').slice(0, 16) + ' UTC',
+        kind: labelOf(DATA_KINDS, e.kind),
+        how: labelOf(HOW, e.how),
+        where: labelOf(WHERE, e.where),
+        found: labelOf(FOUND, e.found),
+        reachable: labelOf(REACHABLE, e.reachable),
+        actions: (e.actions && e.actions.length)
+          ? e.actions.map(function (a) { return labelOf(ACTIONS, a); }).join('; ')
+          : 'None recorded',
+        notes: e.notes || ''
+      };
+    });
+  }
+
+  function exportReport(entries, now) {
+    return { format: 'leak-report', version: 1, generated: now.toISOString(), entries: entries.slice() };
+  }
+
+  return {
+    NOTES_MAX: NOTES_MAX, DATA_KINDS: DATA_KINDS, HOW: HOW, WHERE: WHERE, FOUND: FOUND,
+    REACHABLE: REACHABLE, ACTIONS: ACTIONS, COLUMNS: COLUMNS,
+    createEntry: createEntry, nextId: nextId, reportRows: reportRows, exportReport: exportReport
+  };
+})();
+
+if (typeof module !== 'undefined') module.exports = LeakLog;
+</script>
 <script>(function () {
   'use strict';
 
@@ -371,6 +535,7 @@ if (typeof module !== 'undefined') module.exports = Tree;
   }
 
   var rules = loadRules();
+  window.PDK = { getRules: function () { return rules; } };
   var baseRules = Detect.normalizeRules(embedded).rules;
 
   // #status is only for save, import, reset and export messages (inside <details>).
@@ -527,7 +692,7 @@ if (typeof module !== 'undefined') module.exports = Tree;
 
   // ---- tabs
   function showTab(which) {
-    ['check', 'tree'].forEach(function (t) {
+    ['check', 'tree', 'leak'].forEach(function (t) {
       var selected = t === which;
       $('tab-' + t).setAttribute('aria-selected', String(selected));
       $('panel-' + t).hidden = !selected;
@@ -535,6 +700,7 @@ if (typeof module !== 'undefined') module.exports = Tree;
   }
   $('tab-check').addEventListener('click', function () { showTab('check'); });
   $('tab-tree').addEventListener('click', function () { showTab('tree'); });
+  $('tab-leak').addEventListener('click', function () { showTab('leak'); });
 
   // ---- decision tree
   var answers = {};
@@ -592,6 +758,172 @@ if (typeof module !== 'undefined') module.exports = Tree;
 
   syncInputs();
   renderTree();
+})();
+</script>
+<script>(function () {
+  'use strict';
+
+  var STORE_KEY = 'pdk.leaklog.v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var entries = load();
+  var confirmingClear = false;
+
+  function load() {
+    try {
+      var v = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(entries)); $('leak-status').textContent = ''; }
+    catch (e) { $('leak-status').textContent = 'Could not save in this browser; entries last for this tab only.'; }
+  }
+
+  function fillSelect(id, options) {
+    var sel = $(id);
+    var blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Choose...';
+    sel.appendChild(blank);
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o[0];
+      opt.textContent = o[1];
+      sel.appendChild(opt);
+    });
+  }
+
+  function localNowForInput() {
+    var d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+
+  function renderActions() {
+    var box = $('leak-actions');
+    LeakLog.ACTIONS.forEach(function (a) {
+      var label = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = a[0];
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(' ' + a[1]));
+      var wrap = document.createElement('div');
+      wrap.appendChild(label);
+      box.appendChild(wrap);
+    });
+  }
+
+  function renderTable() {
+    var wrap = $('leak-table-wrap');
+    wrap.textContent = '';
+    if (!entries.length) {
+      var p = document.createElement('p');
+      p.className = 'small';
+      p.textContent = 'No entries yet.';
+      wrap.appendChild(p);
+      return;
+    }
+    var table = document.createElement('table');
+    table.className = 'leak-table';
+    var head = document.createElement('tr');
+    LeakLog.COLUMNS.forEach(function (c) {
+      var th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = c[1];
+      head.appendChild(th);
+    });
+    table.appendChild(head);
+    LeakLog.reportRows(entries).forEach(function (row) {
+      var tr = document.createElement('tr');
+      LeakLog.COLUMNS.forEach(function (c) {
+        var td = document.createElement('td');
+        td.textContent = row[c[0]];
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+  }
+
+  function readForm() {
+    var actions = [];
+    $('leak-actions').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+      if (cb.checked) actions.push(cb.value);
+    });
+    var whenValue = $('leak-when').value;
+    return {
+      when: whenValue ? new Date(whenValue).toISOString() : '',
+      kind: $('leak-kind').value,
+      how: $('leak-how').value,
+      where: $('leak-where').value,
+      found: $('leak-found').value,
+      reachable: $('leak-reachable').value,
+      actions: actions,
+      notes: $('leak-notes').value
+    };
+  }
+
+  function resetForm() {
+    $('leak-form').reset();
+    $('leak-when').value = localNowForInput();
+  }
+
+  $('leak-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var result = LeakLog.createEntry(readForm(), window.PDK.getRules(), entries);
+    var errBox = $('leak-errors');
+    if (!result.ok) {
+      var msg = result.errors.join(' ');
+      if (result.blocked.length) {
+        msg += ' Looks like: ' + result.blocked.map(function (b) { return b.label + ' (' + b.severity + ')'; }).join(', ') + '.';
+      }
+      errBox.textContent = msg;
+      return;
+    }
+    errBox.textContent = '';
+    entries.push(result.entry);
+    save();
+    renderTable();
+    resetForm();
+    $('leak-status').textContent = 'Saved ' + result.entry.id + '.';
+  });
+
+  $('leak-export').addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(LeakLog.exportReport(entries, new Date()), null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'leak-report.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  $('leak-print').addEventListener('click', function () { window.print(); });
+
+  $('leak-clear').addEventListener('click', function () {
+    var btn = $('leak-clear');
+    if (!confirmingClear) {
+      confirmingClear = true;
+      btn.textContent = 'Click again to confirm clearing all entries';
+      return;
+    }
+    confirmingClear = false;
+    btn.textContent = 'Clear all entries';
+    entries = [];
+    save();
+    renderTable();
+    $('leak-status').textContent = 'All entries cleared.';
+  });
+
+  fillSelect('leak-kind', LeakLog.DATA_KINDS);
+  fillSelect('leak-how', LeakLog.HOW);
+  fillSelect('leak-where', LeakLog.WHERE);
+  fillSelect('leak-found', LeakLog.FOUND);
+  fillSelect('leak-reachable', LeakLog.REACHABLE);
+  renderActions();
+  $('leak-when').value = localNowForInput();
+  renderTable();
 })();
 </script>
 </body>
