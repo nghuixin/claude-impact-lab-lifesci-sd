@@ -1,6 +1,15 @@
 const Detect = (function () {
   const SEVERITY_RANK = { High: 3, Medium: 2, Watchlist: 1 };
 
+  function isValidDetector(d) {
+    if (!d || typeof d !== 'object') return false;
+    if (typeof d.id !== 'string' || typeof d.label !== 'string' || typeof d.placeholder !== 'string') return false;
+    if (!Object.prototype.hasOwnProperty.call(SEVERITY_RANK, d.severity)) return false;
+    if (d.type === 'builtin') return typeof d.fn === 'string';
+    if (d.type === 'regex' || d.type === undefined) return typeof d.pattern === 'string';
+    return false;
+  }
+
   function escapeRegExp(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
@@ -34,6 +43,11 @@ const Detect = (function () {
     }
 
     (rules.detectors || []).forEach(function (d) {
+      if (!isValidDetector(d)) {
+        const name = d && typeof d === 'object' && d.id != null ? String(d.id) : '(unnamed)';
+        errors.push('Malformed detector skipped: ' + name);
+        return;
+      }
       const meta = { id: d.id, label: d.label, severity: d.severity, reason: d.reason, placeholder: d.placeholder };
       try {
         if (d.type === 'builtin') {
@@ -85,7 +99,7 @@ const Detect = (function () {
 
     const counts = { High: 0, Medium: 0, Watchlist: 0 };
     kept.forEach(function (m) { counts[m.severity]++; });
-    const verdict = counts.High > 0 ? 'Stop' : (counts.Medium + counts.Watchlist > 0 ? 'Review' : 'Clear');
+    const verdict = counts.High > 0 ? 'Stop' : (kept.length > 0 ? 'Review' : 'Clear');
     return { matches: kept, counts: counts, verdict: verdict, errors: errors };
   }
 
@@ -105,7 +119,7 @@ const Detect = (function () {
     const rules = {
       version: 1,
       settings: Object.assign({ minSeqLen: 20 }, obj.settings || {}),
-      detectors: Array.isArray(obj.detectors) ? obj.detectors : ((base && base.detectors) || []),
+      detectors: (Array.isArray(obj.detectors) ? obj.detectors : ((base && base.detectors) || [])).filter(isValidDetector),
       idFormats: Array.isArray(obj.idFormats) ? obj.idFormats.filter(function (x) { return typeof x === 'string'; }) : [],
       watchlist: Array.isArray(obj.watchlist)
         ? obj.watchlist.filter(function (w) { return typeof w === 'string' || (w && typeof w.term === 'string'); })
