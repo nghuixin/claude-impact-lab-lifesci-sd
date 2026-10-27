@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="Protect-Data Kit logo: a blue shield with a molecule ring and a check mark" width="96">
+
 # Protect-Data Kit
 
 Offline tools for thinking about protecting proprietary scientific data when using AI tools:
@@ -16,7 +18,7 @@ On a shared computer, click Reset to defaults and Clear all entries when you fin
 
 ## Handing it out
 
-Give participants `index.html`, `synthetic/` and `README.md` (plus `tests/fixtures/false-negative-prose.txt` if the facilitator runs step 3 live). Do not hand out `presentation/`, `.superpowers/`, `docs/`, `node_modules/` or `tests/`.
+Give participants `index.html`, `synthetic/` and `README.md`, plus `assets/` if you want the logo to show at the top of this file (the page itself does not need it) and `tests/fixtures/false-negative-prose.txt` if the facilitator runs step 3 live. Do not hand out `presentation/`, `.superpowers/`, `docs/`, `node_modules/` or `tests/`.
 
 On the demo browser, click Reset to defaults and Clear all entries before the session.
 

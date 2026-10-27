@@ -93,6 +93,8 @@ if (fs.existsSync(builtPath)) {
   check('leak log tells users to describe, not paste', /Describe, do not paste/.test(html));
   check('leak log says it is not legal or compliance advice', /record, not legal or compliance advice/.test(html));
   check('leak log script is inlined', /const LeakLog =/.test(html) && /pdk\.leaklog\.v1/.test(html));
+  check('header shows the logo inline and hides it from screen readers', /<header>[\s\S]*<svg[^>]*aria-hidden="true"[\s\S]*?<\/svg>[\s\S]*<h1>Protect-Data Kit<\/h1>[\s\S]*<\/header>/.test(html));
+  check('the inline logo carries no external namespace or reference', !/<svg[^>]*\bxmlns\b/.test(html));
 }
 
 if (failures > 0) { console.log('\n' + failures + ' check(s) failed.'); process.exit(1); }

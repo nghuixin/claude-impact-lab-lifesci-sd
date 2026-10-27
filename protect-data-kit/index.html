@@ -12,6 +12,8 @@
   h1 { margin: 0 0 4px; font-size: 1.5rem; }
   h2, h3 { margin: 20px 0 8px; }
   p.lead { margin: 0; color: var(--muted); }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand svg { flex: none; width: 56px; height: 56px; }
   [role=tablist] { display:flex; gap:8px; max-width:860px; margin:0 auto; padding:0 16px; }
   [role=tab] { font:inherit; padding:8px 14px; border:2px solid var(--line); background:#fff; border-radius:6px 6px 0 0; cursor:pointer; }
   [role=tab][aria-selected=true] { border-color: var(--accent); font-weight: 700; }
@@ -39,8 +41,19 @@
 </head>
 <body>
 <header>
-  <h1>Protect-Data Kit</h1>
-  <p class="lead">Runs entirely in this browser tab. Nothing you paste here is sent anywhere.</p>
+  <div class="brand">
+    <svg viewBox="0 0 256 256" aria-hidden="true" focusable="false">
+      <path d="M128 14 L218 46 V116 C218 172 181 214 128 242 C75 214 38 172 38 116 V46 Z" fill="#1a4fa0"/>
+      <path d="M128 26 L206 54 V116 C206 165 174 203 128 229 C82 203 50 165 50 116 V54 Z" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M128 70 L168 93 V139 L128 162 L88 139 V93 Z" fill="none" stroke="#ffffff" stroke-width="10" stroke-linejoin="round"/>
+      <path d="M106 118 L123 136 L153 100" fill="none" stroke="#8df0b0" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="94" y="184" width="68" height="11" rx="5.5" fill="#ffffff"/>
+    </svg>
+    <div>
+      <h1>Protect-Data Kit</h1>
+      <p class="lead">Runs entirely in this browser tab. Nothing you paste here is sent anywhere.</p>
+    </div>
+  </div>
 </header>
 
 <div role="tablist" aria-label="Tools">
