@@ -95,3 +95,70 @@ test('normalizeRules falls back to base detectors when the file has none', () =>
   const n = Detect.normalizeRules({ version: 1 }, base);
   assert.deepStrictEqual(n.rules.detectors, [secretRule]);
 });
+
+function withoutKey(obj, key) {
+  const copy = Object.assign({}, obj);
+  delete copy[key];
+  return copy;
+}
+
+const badSeverityRule = Object.assign({}, secretRule, { severity: 'high' });
+
+test('normalizeRules drops a detector with a wrong-case severity', () => {
+  const n = Detect.normalizeRules({ version: 1, detectors: [badSeverityRule] });
+  assert.strictEqual(n.ok, true);
+  assert.deepStrictEqual(n.rules.detectors, []);
+  const r = Detect.scan('a SECRETWORD b', n.rules);
+  assert.strictEqual(r.matches.length, 0);
+  assert.strictEqual(r.verdict, 'Clear');
+});
+
+test('scan skips a detector with a wrong-case severity, reports it, and never returns Clear with matches', () => {
+  const alone = Detect.scan('a SECRETWORD b', Object.assign({}, none, { detectors: [badSeverityRule] }));
+  assert.strictEqual(alone.matches.length, 0);
+  assert.strictEqual(alone.errors.length, 1);
+
+  const mixed = Detect.scan('ABC-12345 SECRETWORD',
+    Object.assign({}, none, { detectors: [badSeverityRule], idFormats: ['ABC-\\d{5}'] }));
+  assert.strictEqual(mixed.matches.length, 1);
+  assert.strictEqual(mixed.errors.length, 1);
+  assert.notStrictEqual(mixed.verdict, 'Clear');
+  assert.strictEqual(mixed.verdict, 'Review');
+});
+
+test('a null detector entry in scan does not throw and is reported in errors', () => {
+  let r;
+  assert.doesNotThrow(function () {
+    r = Detect.scan('a SECRETWORD b', Object.assign({}, none, { detectors: [null, secretRule] }));
+  });
+  assert.strictEqual(r.errors.length, 1);
+  assert.strictEqual(r.matches.length, 1);
+  assert.strictEqual(r.verdict, 'Stop');
+});
+
+test('normalizeRules drops detectors missing id, pattern, or placeholder', () => {
+  const n = Detect.normalizeRules({
+    version: 1,
+    detectors: [
+      withoutKey(secretRule, 'id'),
+      withoutKey(secretRule, 'pattern'),
+      withoutKey(secretRule, 'placeholder'),
+      null,
+      secretRule
+    ]
+  });
+  assert.deepStrictEqual(n.rules.detectors, [secretRule]);
+});
+
+test('normalizeRules keeps valid regex and builtin detectors and drops builtins without fn', () => {
+  const builtinRule = { id: 'b', type: 'builtin', fn: 'nope', label: 'B', severity: 'Medium', placeholder: 'B', reason: 'r' };
+  const builtinNoFn = withoutKey(builtinRule, 'fn');
+  const n = Detect.normalizeRules({ version: 1, detectors: [secretRule, builtinRule, builtinNoFn] });
+  assert.deepStrictEqual(n.rules.detectors, [secretRule, builtinRule]);
+});
+
+test('normalizeRules filters malformed entries out of the base detectors fallback too', () => {
+  const base = { version: 1, detectors: [null, withoutKey(secretRule, 'placeholder'), secretRule] };
+  const n = Detect.normalizeRules({ version: 1 }, base);
+  assert.deepStrictEqual(n.rules.detectors, [secretRule]);
+});
