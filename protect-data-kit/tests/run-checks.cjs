@@ -43,5 +43,18 @@ Object.keys(positives).concat(['synthetic/README.md']).forEach(function (rel) {
 check('public text produces zero matches', idsIn('tests/fixtures/public-text.txt').length === 0);
 check('false-negative prose is (knowingly) not flagged', idsIn('tests/fixtures/false-negative-prose.txt').length === 0);
 
+// Static offline checks on the built page.
+const builtPath = path.join(root, 'index.html');
+check('index.html has been built', fs.existsSync(builtPath), 'run: npm run build');
+if (fs.existsSync(builtPath)) {
+  const html = fs.readFileSync(builtPath, 'utf8');
+  ['fetch(', 'XMLHttpRequest', 'sendBeacon', 'WebSocket', 'http://', 'https://', '<link', 'import(', ' src='].forEach(function (bad) {
+    check('index.html contains no "' + bad + '"', html.indexOf(bad) === -1);
+  });
+  check('index.html has no unreplaced build markers', !/\/\*__[A-Z]+__\*\//.test(html));
+  check('index.html states the blind spots', /unpublished results/i.test(html) && /screenshots/i.test(html) && /attachments/i.test(html));
+  check('index.html says the checker is advisory', /advisory/i.test(html));
+}
+
 if (failures > 0) { console.log('\n' + failures + ' check(s) failed.'); process.exit(1); }
 console.log('\nAll checks passed.');
