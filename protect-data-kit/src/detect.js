@@ -148,7 +148,21 @@ const Detect = (function () {
     return { ok: true, rules: rules };
   }
 
-  return { scan: scan, redact: redact, normalizeRules: normalizeRules, _collect: collect, _builtins: BUILTINS };
+  // What the page stores in localStorage: user-owned settings only. Detectors are
+  // stored only when they differ from the built-in base, so a rebuilt page's
+  // detector fixes still reach machines that have used the page before.
+  function storableRules(rules, base) {
+    const out = {
+      version: 1,
+      settings: rules.settings,
+      idFormats: rules.idFormats,
+      watchlist: rules.watchlist
+    };
+    if (JSON.stringify(rules.detectors) !== JSON.stringify(base.detectors)) out.detectors = rules.detectors;
+    return out;
+  }
+
+  return { scan: scan, redact: redact, normalizeRules: normalizeRules, storableRules: storableRules, _collect: collect, _builtins: BUILTINS };
 })();
 
 if (typeof module !== 'undefined') module.exports = Detect;

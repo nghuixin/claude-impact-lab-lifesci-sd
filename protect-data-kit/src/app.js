@@ -19,12 +19,21 @@
   }
 
   var rules = loadRules();
+  var baseRules = Detect.normalizeRules(embedded).rules;
 
+  // #status is only for save, import, reset and export messages (inside <details>).
+  // Scan errors go to #scan-errors, which is never touched here.
   function setStatus(msg) { $('status').textContent = msg; }
 
   function saveRules() {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(rules)); setStatus(''); }
-    catch (e) { setStatus('Could not save in this browser; your changes last for this tab only.'); }
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(Detect.storableRules(rules, baseRules)));
+      setStatus('');
+      return true;
+    } catch (e) {
+      setStatus('Could not save in this browser; your changes last for this tab only.');
+      return false;
+    }
   }
 
   // ---- watchlist helpers
@@ -54,6 +63,7 @@
     Review: 'Review: possible matches found. Check each one below.',
     Stop: 'Stop: likely sensitive content found. Remove or redact it before sending it anywhere.'
   };
+  var CLEAR_WITH_ERRORS = 'Clear: no matches found, but some rules did not run (see below). This is not a guarantee that the text is safe to share.';
 
   function renderHighlights(container, text, matches) {
     container.textContent = '';
@@ -84,6 +94,7 @@
     if (!text) {
       $('verdict').className = '';
       $('verdict').textContent = 'Paste text above to check it.';
+      $('scan-errors').textContent = '';
       $('counts').textContent = '';
       $('highlight').textContent = '';
       $('findings').textContent = '';
@@ -91,13 +102,16 @@
       return;
     }
     var r = Detect.scan(text, rules);
+    var hasErrors = r.errors.length > 0;
     $('verdict').className = r.verdict;
-    $('verdict').textContent = VERDICT_TEXT[r.verdict];
+    $('verdict').textContent = (r.verdict === 'Clear' && hasErrors) ? CLEAR_WITH_ERRORS : VERDICT_TEXT[r.verdict];
+    $('scan-errors').textContent = hasErrors
+      ? 'Some rules did not run, so this result may be incomplete: ' + r.errors.join(' | ')
+      : '';
     $('counts').textContent = 'High: ' + r.counts.High + '   Medium: ' + r.counts.Medium + '   Watchlist: ' + r.counts.Watchlist;
     renderHighlights($('highlight'), text, r.matches);
     renderFindings($('findings'), r.matches);
     $('redacted').value = Detect.redact(text, r.matches);
-    if (r.errors.length) setStatus('Some rules could not be applied: ' + r.errors.join(' | '));
   }
 
   $('input').addEventListener('input', run);
@@ -143,8 +157,10 @@
         var n = Detect.normalizeRules(JSON.parse(reader.result), embedded);
         if (!n.ok) { setStatus('Import failed: ' + n.error); return; }
         rules = n.rules;
-        saveRules(); syncInputs(); run();
-        setStatus('Imported ' + file.name + '.');
+        var saved = saveRules(); syncInputs(); run();
+        setStatus(saved
+          ? 'Imported ' + file.name + '.'
+          : 'Imported ' + file.name + ' for this tab only; it could not be saved in this browser.');
       } catch (e) { setStatus('Import failed: that file is not valid JSON.'); }
     };
     reader.readAsText(file);
@@ -171,14 +187,19 @@
   // ---- decision tree
   var answers = {};
 
-  function renderTree() {
+  // moveFocus is true only after a user action (answer or Start over); the page
+  // load render and tab switching must not steal focus.
+  function renderTree(moveFocus) {
     var body = $('tree-body');
     body.textContent = '';
     var q = Tree.nextQuestion(answers);
+    var target = null;
 
     if (q) {
       var h = document.createElement('h2');
       h.textContent = Tree.QUESTIONS[q].text;
+      h.tabIndex = -1;
+      target = h;
       body.appendChild(h);
       var wrap = document.createElement('div');
       wrap.className = 'opts';
@@ -186,7 +207,7 @@
         var b = document.createElement('button');
         b.type = 'button';
         b.textContent = opt[1];
-        b.addEventListener('click', function () { answers[q] = opt[0]; renderTree(); });
+        b.addEventListener('click', function () { answers[q] = opt[0]; renderTree(true); });
         wrap.appendChild(b);
       });
       body.appendChild(wrap);
@@ -194,7 +215,8 @@
       var o = Tree.OUTCOMES[Tree.outcome(answers)];
       var card = document.createElement('div');
       card.className = 'card';
-      card.setAttribute('role', 'status');
+      card.tabIndex = -1;
+      target = card;
       var t = document.createElement('h2'); t.textContent = o.title;
       var p1 = document.createElement('p'); p1.textContent = o.body;
       var p2 = document.createElement('p'); p2.textContent = 'Next step: ' + o.next;
@@ -208,10 +230,12 @@
       var rb = document.createElement('button');
       rb.type = 'button';
       rb.textContent = 'Start over';
-      rb.addEventListener('click', function () { answers = {}; renderTree(); });
+      rb.addEventListener('click', function () { answers = {}; renderTree(true); });
       restart.appendChild(rb);
       body.appendChild(restart);
     }
+
+    if (moveFocus && target) target.focus();
   }
 
   syncInputs();
