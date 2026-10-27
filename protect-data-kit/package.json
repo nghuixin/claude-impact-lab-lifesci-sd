@@ -1,0 +1,11 @@
+{
+  "name": "protect-data-kit",
+  "private": true,
+  "description": "Offline paste-checker, decision tree and synthetic data for protecting proprietary scientific data.",
+  "scripts": {
+    "build": "node build.cjs",
+    "test": "node --test tests/*.test.cjs",
+    "check": "node tests/run-checks.cjs",
+    "synthetic": "node tools/generate-synthetic.cjs"
+  }
+}
